@@ -1,5 +1,6 @@
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -187,16 +188,23 @@ export function StationMap({
   }, [radarFrames, radarFrameDensity]);
 
   const isGlobeMode = mapViewMode === '3d';
-  const containerStyle = {
+  const containerStyle: CSSProperties = {
     ...mapContainerStyle,
-    position: 'relative' as const,
+    position: 'relative',
     maxWidth: isGlobeMode ? 760 : 'none',
     margin: isGlobeMode ? '0 auto' : undefined,
     borderRadius: isGlobeMode ? '50% / 44%' : mapContainerStyle.borderRadius,
+    clipPath: isGlobeMode ? 'ellipse(50% 44% at 50% 50%)' : undefined,
+    WebkitClipPath: isGlobeMode ? 'ellipse(50% 44% at 50% 50%)' : undefined,
     boxShadow: isGlobeMode
       ? '0 24px 46px rgba(15, 23, 42, 0.42), inset 0 0 0 1px rgba(148, 163, 184, 0.45)'
       : undefined,
     transform: isGlobeMode ? 'perspective(1000px) rotateX(25deg) scale(1.03)' : undefined,
+    WebkitTransform: isGlobeMode ? 'perspective(1000px) rotateX(25deg) scale(1.03)' : undefined,
+    transformStyle: isGlobeMode ? 'preserve-3d' : undefined,
+    WebkitTransformStyle: isGlobeMode ? 'preserve-3d' : undefined,
+    backfaceVisibility: isGlobeMode ? 'hidden' : undefined,
+    WebkitBackfaceVisibility: isGlobeMode ? 'hidden' : undefined,
     transformOrigin: isGlobeMode ? 'center center' : undefined
   };
 
@@ -216,7 +224,17 @@ export function StationMap({
           }}
         />
       ) : null}
-      <MapContainer center={center} zoom={5} style={{ height: '100%', width: '100%' }}>
+      <MapContainer
+        center={center}
+        zoom={5}
+        style={{
+          height: '100%',
+          width: '100%',
+          transform: isGlobeMode ? 'translateZ(0) scale(1.02)' : undefined,
+          WebkitTransform: isGlobeMode ? 'translateZ(0) scale(1.02)' : undefined,
+          filter: isGlobeMode ? 'saturate(1.08) contrast(1.03)' : undefined
+        }}
+      >
         <TileLayer
           attribution={
             darkMode
