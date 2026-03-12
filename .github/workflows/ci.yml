@@ -4,12 +4,26 @@ on:
   push:
     branches:
       - main
+    paths:
+      - '.github/workflows/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
   pull_request:
     branches:
       - main
+    paths:
+      - '.github/workflows/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  verify:
+  backend:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,11 +39,36 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Lint
-        run: npm run lint
+      - name: Backend lint
+        run: npm run lint --workspace=packages/backend
 
-      - name: Test
-        run: npm run test
+      - name: Backend test
+        run: npm run test --workspace=packages/backend
 
-      - name: Build
-        run: npm run build
+      - name: Backend build
+        run: npm run build --workspace=packages/backend
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Frontend lint
+        run: npm run lint --workspace=packages/frontend
+
+      - name: Frontend test
+        run: npm run test --workspace=packages/frontend
+
+      - name: Frontend build
+        run: npm run build --workspace=packages/frontend
