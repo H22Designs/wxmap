@@ -10,6 +10,7 @@ import {
   fetchRadarFrames,
   fetchStationObservations,
   fetchStations,
+  fetchUserPreferences,
   loginUser,
   registerUser,
   HttpStatusError,
@@ -20,7 +21,9 @@ import {
   type Observation,
   type RadarFrame,
   type RadarFrameDensity,
-  type Station
+  type Station,
+  type UserPreferences,
+  updateUserPreferences
 } from './services/api';
 import { AdminSettingsPanel } from './components/AdminSettingsPanel';
 import { AuthPanel } from './components/AuthPanel';
@@ -74,6 +77,11 @@ export function App(): JSX.Element {
   const [providerStatuses, setProviderStatuses] = useState<AdminProviderStatus[]>([]);
   const [providerActivity, setProviderActivity] = useState<ProviderActivityEntry[]>([]);
   const [isProviderActivityHydrated, setIsProviderActivityHydrated] = useState(false);
+  const [isUserPreferencesHydrated, setIsUserPreferencesHydrated] = useState(false);
+  const [preferencePersistenceState, setPreferencePersistenceState] = useState<
+    'guest' | 'loading' | 'saving' | 'saved' | 'error'
+  >('guest');
+  const [lastSyncedPreferencesSignature, setLastSyncedPreferencesSignature] = useState<string | null>(null);
   const [providerStatusState, setProviderStatusState] = useState('not-loaded');
   const [providerStreamState, setProviderStreamState] = useState<
     'disconnected' | 'connecting' | 'connected' | 'reconnecting'
@@ -105,6 +113,26 @@ export function App(): JSX.Element {
 
   function showToast(type: Toast['type'], message: string): void {
     setToast({ type, message });
+  }
+
+  function serializeUserPreferences(input: Omit<UserPreferences, 'userId' | 'updatedAt'>): string {
+    return JSON.stringify({
+      darkMode: input.darkMode,
+      mapViewMode: input.mapViewMode,
+      unitSystem: input.unitSystem,
+      showRadarLayer: input.showRadarLayer,
+      showStationLayer: input.showStationLayer,
+      visibleProviders: [...input.visibleProviders].sort()
+    });
+  }
+
+  function applyUserPreferences(preferences: UserPreferences): void {
+    setDarkMode(preferences.darkMode);
+    setMapViewMode(preferences.mapViewMode);
+    setUnitSystem(preferences.unitSystem);
+    setShowRadarLayer(preferences.showRadarLayer);
+    setShowStationLayer(preferences.showStationLayer);
+    setVisibleProviders(preferences.visibleProviders);
   }
 
   async function refreshWeatherData(options: { showToasts?: boolean } = {}): Promise<void> {
@@ -197,6 +225,36 @@ export function App(): JSX.Element {
       showToast('error', 'Failed to load provider statuses.');
     } finally {
       setIsProviderStatusLoading(false);
+    }
+  }
+
+  async function loadUserPreferencesWithToken(accessToken: string): Promise<void> {
+    setPreferencePersistenceState('loading');
+
+    try {
+      const preferences = await fetchUserPreferences(accessToken);
+      applyUserPreferences(preferences);
+      setLastSyncedPreferencesSignature(
+        serializeUserPreferences({
+          darkMode: preferences.darkMode,
+          mapViewMode: preferences.mapViewMode,
+          unitSystem: preferences.unitSystem,
+          showRadarLayer: preferences.showRadarLayer,
+          showStationLayer: preferences.showStationLayer,
+          visibleProviders: preferences.visibleProviders
+        })
+      );
+      setPreferencePersistenceState('saved');
+      setIsUserPreferencesHydrated(true);
+    } catch (error) {
+      if (error instanceof HttpStatusError && error.status === 401) {
+        handleUnauthorizedSession();
+        return;
+      }
+
+      setPreferencePersistenceState('error');
+      setIsUserPreferencesHydrated(true);
+      showToast('error', 'Failed to load saved user preferences.');
     }
   }
 
@@ -347,11 +405,23 @@ export function App(): JSX.Element {
       setProviderActivity([]);
       setProviderStreamState('disconnected');
       setIsProviderActivityHydrated(false);
+      setIsUserPreferencesHydrated(false);
+      setLastSyncedPreferencesSignature(null);
+      setPreferencePersistenceState('guest');
       setProviderStatusState('not-loaded');
       return;
     }
 
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    setIsUserPreferencesHydrated(false);
+    void loadUserPreferencesWithToken(session.accessToken);
   }, [session]);
 
   useEffect(() => {
@@ -416,6 +486,74 @@ export function App(): JSX.Element {
       disconnect();
     };
   }, [session]);
+
+  useEffect(() => {
+    if (!session || !isUserPreferencesHydrated) {
+      return;
+    }
+
+    const nextSignature = serializeUserPreferences({
+      darkMode,
+      mapViewMode,
+      unitSystem,
+      showRadarLayer,
+      showStationLayer,
+      visibleProviders
+    });
+
+    if (nextSignature === lastSyncedPreferencesSignature) {
+      return;
+    }
+
+    setPreferencePersistenceState('saving');
+
+    const timer = window.setTimeout(() => {
+      void updateUserPreferences({
+        accessToken: session.accessToken,
+        darkMode,
+        mapViewMode,
+        unitSystem,
+        showRadarLayer,
+        showStationLayer,
+        visibleProviders
+      })
+        .then((preferences) => {
+          setLastSyncedPreferencesSignature(
+            serializeUserPreferences({
+              darkMode: preferences.darkMode,
+              mapViewMode: preferences.mapViewMode,
+              unitSystem: preferences.unitSystem,
+              showRadarLayer: preferences.showRadarLayer,
+              showStationLayer: preferences.showStationLayer,
+              visibleProviders: preferences.visibleProviders
+            })
+          );
+          setPreferencePersistenceState('saved');
+        })
+        .catch((error) => {
+          if (error instanceof HttpStatusError && error.status === 401) {
+            handleUnauthorizedSession();
+            return;
+          }
+
+          setPreferencePersistenceState('error');
+        });
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    session,
+    isUserPreferencesHydrated,
+    darkMode,
+    mapViewMode,
+    unitSystem,
+    showRadarLayer,
+    showStationLayer,
+    visibleProviders,
+    lastSyncedPreferencesSignature
+  ]);
 
   useEffect(() => {
     const center =
@@ -943,6 +1081,7 @@ export function App(): JSX.Element {
             const deduped = Array.from(new Set(providers));
             setVisibleProviders(deduped);
           }}
+          persistenceState={preferencePersistenceState}
         />
         {stationsStatus === 'loading...' ? (
           <div aria-label="Loading station map" role="status" aria-live="polite" style={{ display: 'grid', gap: 8 }}>
