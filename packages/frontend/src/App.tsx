@@ -57,6 +57,9 @@ export function App(): JSX.Element {
   const [currentByStationId, setCurrentByStationId] = useState<
     Record<string, CurrentObservation | undefined>
   >({});
+  const [isDataRefreshing, setIsDataRefreshing] = useState(false);
+  const [lastDataRefreshAt, setLastDataRefreshAt] = useState<string | null>(null);
+  const [autoRefreshSeconds, setAutoRefreshSeconds] = useState<0 | 30 | 60 | 120 | 300>(60);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -102,6 +105,65 @@ export function App(): JSX.Element {
 
   function showToast(type: Toast['type'], message: string): void {
     setToast({ type, message });
+  }
+
+  async function refreshWeatherData(options: { showToasts?: boolean } = {}): Promise<void> {
+    setIsDataRefreshing(true);
+
+    try {
+      const [healthResult, stationsResult, currentResult] = await Promise.allSettled([
+        fetchHealth(),
+        fetchStations(),
+        fetchCurrentObservations()
+      ]);
+
+      let hasError = false;
+      let hasAnySuccess = false;
+
+      if (healthResult.status === 'fulfilled') {
+        setHealth(healthResult.value);
+        hasAnySuccess = true;
+      } else {
+        setHealth('offline');
+        hasError = true;
+      }
+
+      if (stationsResult.status === 'fulfilled') {
+        setStations(stationsResult.value);
+        setStationsStatus(stationsResult.value.length > 0 ? 'loaded' : 'empty');
+        hasAnySuccess = true;
+      } else {
+        setStationsStatus('error');
+        hasError = true;
+      }
+
+      if (currentResult.status === 'fulfilled') {
+        const byStationId = currentResult.value.reduce<Record<string, CurrentObservation>>((accumulator, item) => {
+          accumulator[item.stationId] = item;
+          return accumulator;
+        }, {});
+
+        setCurrentByStationId(byStationId);
+        hasAnySuccess = true;
+      } else {
+        setCurrentByStationId({});
+        hasError = true;
+      }
+
+      if (hasAnySuccess) {
+        setLastDataRefreshAt(new Date().toISOString());
+      }
+
+      if (options.showToasts) {
+        if (hasError) {
+          showToast('error', 'Some weather data failed to refresh.');
+        } else {
+          showToast('success', 'Weather data refreshed.');
+        }
+      }
+    } finally {
+      setIsDataRefreshing(false);
+    }
   }
 
   function handleUnauthorizedSession(): void {
@@ -175,54 +237,28 @@ export function App(): JSX.Element {
   }, [toast]);
 
   useEffect(() => {
-    void fetchHealth()
-      .then((value) => setHealth(value))
-      .catch(() => setHealth('offline'));
-
-    void fetchStations()
-      .then((items) => {
-        setStations(items);
-        setStationsStatus(items.length > 0 ? 'loaded' : 'empty');
-      })
-      .catch(() => {
-        setStationsStatus('error');
-      });
-
-    void fetchCurrentObservations()
-      .then((items) => {
-        const byStationId = items.reduce<Record<string, CurrentObservation>>((accumulator, item) => {
-          accumulator[item.stationId] = item;
-          return accumulator;
-        }, {});
-        setCurrentByStationId(byStationId);
-      })
-      .catch(() => {
-        setCurrentByStationId({});
-      });
+    void refreshWeatherData();
 
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
 
-    if (!raw) {
-      return;
-    }
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as LoginResult;
 
-    try {
-      const parsed = JSON.parse(raw) as LoginResult;
+        if (!parsed?.accessToken || !parsed?.user?.username || !parsed?.user?.role) {
+          window.localStorage.removeItem(SESSION_STORAGE_KEY);
+        } else {
+          setSession(parsed);
+          setAuthStatus('restored');
 
-      if (!parsed?.accessToken || !parsed?.user?.username || !parsed?.user?.role) {
+          if (parsed.user.role === 'admin') {
+            void loadAdminSettingsWithToken(parsed.accessToken);
+            void loadAdminProvidersWithToken(parsed.accessToken);
+          }
+        }
+      } catch {
         window.localStorage.removeItem(SESSION_STORAGE_KEY);
-        return;
       }
-
-      setSession(parsed);
-      setAuthStatus('restored');
-
-      if (parsed.user.role === 'admin') {
-        void loadAdminSettingsWithToken(parsed.accessToken);
-        void loadAdminProvidersWithToken(parsed.accessToken);
-      }
-    } catch {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
     }
 
     const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -262,6 +298,20 @@ export function App(): JSX.Element {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (autoRefreshSeconds === 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshWeatherData();
+    }, autoRefreshSeconds * 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [autoRefreshSeconds]);
 
   useEffect(() => {
     window.localStorage.setItem(THEME_STORAGE_KEY, darkMode ? 'dark' : 'light');
@@ -536,6 +586,7 @@ export function App(): JSX.Element {
     provider: string;
     enabled: boolean;
     intervalMinutes: number;
+    endpoint: string | null;
   }): Promise<void> {
     if (!session || session.user.role !== 'admin') {
       setProviderStatusState('forbidden-for-non-admin');
@@ -549,7 +600,8 @@ export function App(): JSX.Element {
         accessToken: session.accessToken,
         provider: input.provider,
         enabled: input.enabled,
-        intervalMinutes: input.intervalMinutes
+        intervalMinutes: input.intervalMinutes,
+        endpoint: input.endpoint
       });
 
       setProviderStatuses((previous) => {
@@ -635,6 +687,14 @@ export function App(): JSX.Element {
     const providers = new Set(stations.map((station) => station.provider));
     return ['all', ...Array.from(providers).sort()];
   }, [stations]);
+
+  const lastDataRefreshLabel = useMemo(() => {
+    if (!lastDataRefreshAt) {
+      return 'never';
+    }
+
+    return new Date(lastDataRefreshAt).toLocaleTimeString();
+  }, [lastDataRefreshAt]);
 
   useEffect(() => {
     const stationProviders = providerOptions.filter((provider) => provider !== 'all');
@@ -847,6 +907,9 @@ export function App(): JSX.Element {
           radarPlaying={radarPlaying}
           darkMode={darkMode}
           radarStatus={radarStatus}
+          isDataRefreshing={isDataRefreshing}
+          lastDataRefreshLabel={lastDataRefreshLabel}
+          autoRefreshSeconds={autoRefreshSeconds}
           filteredCount={filteredStations.length}
           totalCount={stations.length}
           onMetricChange={setSelectedMetric}
@@ -858,6 +921,10 @@ export function App(): JSX.Element {
           onRadarOpacityChange={setRadarOpacity}
           onToggleRadarPlaying={() => setRadarPlaying((previous) => !previous)}
           onToggleDarkMode={() => setDarkMode((previous) => !previous)}
+          onRefreshData={() => {
+            void refreshWeatherData({ showToasts: true });
+          }}
+          onAutoRefreshSecondsChange={setAutoRefreshSeconds}
         />
         <UserExperiencePanel
           darkMode={darkMode}
