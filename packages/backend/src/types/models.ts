@@ -22,6 +22,21 @@ export type ProviderStatus = {
   nextSyncAt: string | null;
 };
 
+export type MapViewMode = '2d' | '3d';
+
+export type UnitSystem = 'metric' | 'imperial';
+
+export type UserPreferences = {
+  userId: string;
+  darkMode: boolean;
+  mapViewMode: MapViewMode;
+  unitSystem: UnitSystem;
+  showRadarLayer: boolean;
+  showStationLayer: boolean;
+  visibleProviders: string[];
+  updatedAt: string;
+};
+
 export type Station = {
   id: string;
   provider: string;

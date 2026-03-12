@@ -28,6 +28,8 @@ type RadarFramesResponse = {
 };
 
 export type RadarFrameDensity = 'normal' | 'dense' | 'ultra';
+export type MapViewMode = '2d' | '3d';
+export type UnitSystem = 'metric' | 'imperial';
 
 type AuthUser = {
   id: string;
@@ -105,6 +107,17 @@ export type RadarFrame = {
   id: string;
   observedAt: string;
   tileUrl: string;
+};
+
+export type UserPreferences = {
+  userId: string;
+  darkMode: boolean;
+  mapViewMode: MapViewMode;
+  unitSystem: UnitSystem;
+  showRadarLayer: boolean;
+  showStationLayer: boolean;
+  visibleProviders: string[];
+  updatedAt: string;
 };
 
 export class HttpStatusError extends Error {
@@ -363,4 +376,51 @@ export async function updateAdminProviderConfig(input: {
   }
 
   return (await response.json()) as AdminProviderStatus;
+}
+
+export async function fetchUserPreferences(accessToken: string): Promise<UserPreferences> {
+  const response = await fetch(`${apiBaseUrl}/user/preferences`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new HttpStatusError(
+      errorText || `User preferences request failed with status ${response.status}`,
+      response.status
+    );
+  }
+
+  return (await response.json()) as UserPreferences;
+}
+
+export async function updateUserPreferences(input: {
+  accessToken: string;
+  darkMode?: boolean;
+  mapViewMode?: MapViewMode;
+  unitSystem?: UnitSystem;
+  showRadarLayer?: boolean;
+  showStationLayer?: boolean;
+  visibleProviders?: string[];
+}): Promise<UserPreferences> {
+  const response = await fetch(`${apiBaseUrl}/user/preferences`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(input)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new HttpStatusError(
+      errorText || `Update user preferences request failed with status ${response.status}`,
+      response.status
+    );
+  }
+
+  return (await response.json()) as UserPreferences;
 }

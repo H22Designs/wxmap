@@ -2,6 +2,8 @@ import { panelStyle } from '../styles/ui';
 
 export type UnitSystem = 'metric' | 'imperial';
 
+type PreferencesPersistenceState = 'guest' | 'loading' | 'saving' | 'saved' | 'error';
+
 type UserExperiencePanelProps = {
   darkMode: boolean;
   mapViewMode: '2d' | '3d';
@@ -16,6 +18,7 @@ type UserExperiencePanelProps = {
   onShowRadarLayerChange: (value: boolean) => void;
   onShowStationLayerChange: (value: boolean) => void;
   onVisibleProvidersChange: (providers: string[]) => void;
+  persistenceState?: PreferencesPersistenceState;
 };
 
 export function UserExperiencePanel({
@@ -31,13 +34,28 @@ export function UserExperiencePanel({
   onUnitSystemChange,
   onShowRadarLayerChange,
   onShowStationLayerChange,
-  onVisibleProvidersChange
+  onVisibleProvidersChange,
+  persistenceState = 'guest'
 }: UserExperiencePanelProps): JSX.Element {
   const providers = providerOptions.filter((provider) => provider !== 'all');
+
+  const persistenceLabel =
+    persistenceState === 'guest'
+      ? 'Preferences are saved locally for guests.'
+      : persistenceState === 'loading'
+        ? 'Loading your saved preferences...'
+        : persistenceState === 'saving'
+          ? 'Saving your preferences...'
+          : persistenceState === 'saved'
+            ? 'Preferences synced to your account.'
+            : 'Unable to sync preferences right now.';
 
   return (
     <section style={panelStyle} aria-label="User customization panel">
       <h3 style={{ marginTop: 0, marginBottom: 10 }}>Customize your experience</h3>
+      <p aria-live="polite" style={{ marginTop: 0, marginBottom: 10, fontSize: 13 }}>
+        {persistenceLabel}
+      </p>
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         <label style={{ display: 'grid', gap: 4 }}>
           Units

@@ -55,5 +55,17 @@ export function applySchema(db: Database.Database): void {
       api_secret TEXT,
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
+
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id TEXT PRIMARY KEY,
+      dark_mode INTEGER NOT NULL DEFAULT 0,
+      map_view_mode TEXT NOT NULL DEFAULT '2d' CHECK (map_view_mode IN ('2d', '3d')),
+      unit_system TEXT NOT NULL DEFAULT 'metric' CHECK (unit_system IN ('metric', 'imperial')),
+      show_radar_layer INTEGER NOT NULL DEFAULT 1,
+      show_station_layer INTEGER NOT NULL DEFAULT 1,
+      visible_providers_json TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
   `);
 }

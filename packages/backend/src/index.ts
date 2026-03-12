@@ -6,12 +6,13 @@ import { createServer } from 'node:http';
 import { adminRouter } from './routes/adminRoutes.js';
 import { authRouter } from './routes/authRoutes.js';
 import { radarRouter } from './routes/radarRoutes.js';
+import { userRouter } from './routes/userRoutes.js';
 import { weatherRouter } from './routes/weatherRoutes.js';
 import { RealtimeBroadcaster } from './services/broadcaster.js';
 import { CollectorService } from './services/collector.js';
 import { getKnownProviders } from './services/providerCatalog.js';
 import { ProviderStatusStore } from './services/providerStatusStore.js';
-import type { Observation, ProviderConfig, Setting, Station, User } from './types/models.js';
+import type { Observation, ProviderConfig, Setting, Station, User, UserPreferences } from './types/models.js';
 
 dotenv.config();
 
@@ -60,12 +61,26 @@ type ProviderConfigRepositoryLike = {
   }) => ProviderConfig;
 };
 
+type UserPreferencesRepositoryLike = {
+  getOrCreatePreferences: (userId: string) => UserPreferences;
+  upsertPreferences: (input: {
+    userId: string;
+    darkMode?: boolean;
+    mapViewMode?: '2d' | '3d';
+    unitSystem?: 'metric' | 'imperial';
+    showRadarLayer?: boolean;
+    showStationLayer?: boolean;
+    visibleProviders?: string[];
+  }) => UserPreferences;
+};
+
 function createInMemoryRepositories(): {
   stationRepository: StationRepositoryLike;
   observationRepository: ObservationRepositoryLike;
   settingsRepository: SettingsRepositoryLike;
   userRepository: UserRepositoryLike;
   providerConfigRepository: ProviderConfigRepositoryLike;
+  userPreferencesRepository: UserPreferencesRepositoryLike;
 } {
   const nowIso = new Date().toISOString();
   const now = Date.now();
@@ -197,6 +212,7 @@ function createInMemoryRepositories(): {
       ];
     })
   );
+  const userPreferences = new Map<string, UserPreferences>();
 
   return {
     stationRepository: {
@@ -292,6 +308,45 @@ function createInMemoryRepositories(): {
         providerConfigs.set(input.provider, updated);
         return updated;
       }
+    },
+    userPreferencesRepository: {
+      getOrCreatePreferences: (userId) => {
+        const existing = userPreferences.get(userId);
+
+        if (existing) {
+          return existing;
+        }
+
+        const created: UserPreferences = {
+          userId,
+          darkMode: false,
+          mapViewMode: '2d',
+          unitSystem: 'metric',
+          showRadarLayer: true,
+          showStationLayer: true,
+          visibleProviders: [],
+          updatedAt: new Date().toISOString()
+        };
+
+        userPreferences.set(userId, created);
+        return created;
+      },
+      upsertPreferences: (input) => {
+        const existing = userPreferences.get(input.userId);
+        const updated: UserPreferences = {
+          userId: input.userId,
+          darkMode: input.darkMode ?? existing?.darkMode ?? false,
+          mapViewMode: input.mapViewMode ?? existing?.mapViewMode ?? '2d',
+          unitSystem: input.unitSystem ?? existing?.unitSystem ?? 'metric',
+          showRadarLayer: input.showRadarLayer ?? existing?.showRadarLayer ?? true,
+          showStationLayer: input.showStationLayer ?? existing?.showStationLayer ?? true,
+          visibleProviders: input.visibleProviders ?? existing?.visibleProviders ?? [],
+          updatedAt: new Date().toISOString()
+        };
+
+        userPreferences.set(input.userId, updated);
+        return updated;
+      }
     }
   };
 }
@@ -302,6 +357,7 @@ async function createRepositories(): Promise<{
   settingsRepository: SettingsRepositoryLike;
   userRepository: UserRepositoryLike;
   providerConfigRepository: ProviderConfigRepositoryLike;
+  userPreferencesRepository: UserPreferencesRepositoryLike;
   mode: 'sqlite' | 'memory';
 }> {
   try {
@@ -311,6 +367,7 @@ async function createRepositories(): Promise<{
       { ProviderConfigRepository },
       { SettingsRepository },
       { StationRepository },
+      { UserPreferencesRepository },
       { UserRepository }
     ] =
       await Promise.all([
@@ -319,6 +376,7 @@ async function createRepositories(): Promise<{
         import('./db/repositories/providerConfigRepository.js'),
         import('./db/repositories/settingsRepository.js'),
         import('./db/repositories/stationRepository.js'),
+        import('./db/repositories/userPreferencesRepository.js'),
         import('./db/repositories/userRepository.js')
       ]);
 
@@ -329,6 +387,7 @@ async function createRepositories(): Promise<{
       observationRepository: new ObservationRepository(db),
       providerConfigRepository: new ProviderConfigRepository(db),
       settingsRepository: new SettingsRepository(db),
+      userPreferencesRepository: new UserPreferencesRepository(db),
       userRepository: new UserRepository(db),
       mode: 'sqlite'
     };
@@ -359,6 +418,7 @@ const {
   settingsRepository,
   userRepository,
   providerConfigRepository,
+  userPreferencesRepository,
   mode
 } = await createRepositories();
 
@@ -379,6 +439,7 @@ app.use(express.json());
 app.use('/api/v1/weather', weatherRouter({ stationRepository, observationRepository }));
 app.use('/api/v1/radar', radarRouter);
 app.use('/api/v1/auth', authRouter({ userRepository }));
+app.use('/api/v1/user', userRouter({ userPreferencesRepository }));
 app.use(
   '/api/v1/admin',
   adminRouter({
