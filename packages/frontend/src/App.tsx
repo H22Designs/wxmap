@@ -74,7 +74,7 @@ export function App(): JSX.Element {
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
   const [radarFrames, setRadarFrames] = useState<RadarFrame[]>([]);
   const [radarHours, setRadarHours] = useState<1 | 3 | 6 | 12>(3);
-  const [radarSpeedMs, setRadarSpeedMs] = useState<number>(700);
+  const [radarSpeedMs, setRadarSpeedMs] = useState<number>(550);
   const [radarOpacity, setRadarOpacity] = useState<number>(0.45);
   const [radarPlaying, setRadarPlaying] = useState<boolean>(true);
   const [radarStatus, setRadarStatus] = useState<string>('loading...');

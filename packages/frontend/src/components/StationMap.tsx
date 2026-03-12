@@ -162,14 +162,18 @@ export function StationMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {activeFrame ? (
-          <TileLayer
-            key={activeFrame.id}
-            attribution="Radar © RainViewer"
-            url={activeFrame.tileUrl}
-            opacity={radarOpacity}
-          />
-        ) : null}
+        {radarFrames.map((frame) => {
+          const isActive = activeFrame?.id === frame.id;
+
+          return (
+            <TileLayer
+              key={frame.id}
+              attribution="Radar © RainViewer"
+              url={frame.tileUrl}
+              opacity={isActive ? radarOpacity : 0}
+            />
+          );
+        })}
         {stations.map((station) => {
           const current = currentByStationId[station.id];
           const metricValue = getMetricValue(selectedMetric, current);

@@ -11,7 +11,6 @@ type RainViewerMapsResponse = {
   host?: string;
   radar?: {
     past?: RainViewerFrame[];
-    nowcast?: RainViewerFrame[];
   };
 };
 
@@ -57,6 +56,7 @@ radarRouter.get('/frames', async (req, res) => {
   const parsedLng = parseNumber(lng);
   const selectedHours = parseHours(hours);
   const windowStartUnixSeconds = Math.floor(Date.now() / 1000) - selectedHours * 3600;
+  const targetFrameCount = Math.min(24, Math.max(6, selectedHours * 6));
 
   let frames: Array<{ id: string; observedAt: string; tileUrl: string }> = [];
 
@@ -71,11 +71,12 @@ radarRouter.get('/frames', async (req, res) => {
 
     const payload = (await response.json()) as RainViewerMapsResponse;
     const host = payload.host && payload.host.trim() ? payload.host : DEFAULT_RAINVIEWER_HOST;
-    const allFrames = [...(payload.radar?.past ?? []), ...(payload.radar?.nowcast ?? [])];
+    const allFrames = payload.radar?.past ?? [];
 
     frames = allFrames
       .filter((frame) => Number.isFinite(frame.time) && frame.time >= windowStartUnixSeconds && !!frame.path)
       .sort((a, b) => a.time - b.time)
+      .slice(-targetFrameCount)
       .map((frame) => ({
         id: `rv-${frame.time}`,
         observedAt: new Date(frame.time * 1000).toISOString(),
