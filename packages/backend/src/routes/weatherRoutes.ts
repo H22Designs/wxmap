@@ -1,10 +1,18 @@
 import { Router } from 'express';
-import type { ObservationRepository } from '../db/repositories/observationRepository.js';
-import type { StationRepository } from '../db/repositories/stationRepository.js';
+
+type StationRepositoryLike = {
+  listStations: (args: { provider?: string; limit?: number }) => Array<unknown>;
+  getStationById: (stationId: string) => unknown | null;
+};
+
+type ObservationRepositoryLike = {
+  listForStation: (stationId: string, limit?: number) => Array<unknown>;
+  listLatestForAllStations: () => Array<unknown>;
+};
 
 type WeatherRouterDeps = {
-  stationRepository: StationRepository;
-  observationRepository: ObservationRepository;
+  stationRepository: StationRepositoryLike;
+  observationRepository: ObservationRepositoryLike;
 };
 
 function parseLimit(input: unknown): number | undefined {

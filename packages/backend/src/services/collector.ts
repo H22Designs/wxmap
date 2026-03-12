@@ -1,9 +1,12 @@
-import type { SettingsRepository } from '../db/repositories/settingsRepository.js';
 import type { ProviderStatus } from '../types/models.js';
 import { ProviderStatusStore } from './providerStatusStore.js';
 
+type SettingsRepositoryLike = {
+  listSettings: () => Array<{ key: string; value: string }>;
+};
+
 type CollectorServiceDeps = {
-  settingsRepository: SettingsRepository;
+  settingsRepository: SettingsRepositoryLike;
   providerStatusStore: ProviderStatusStore;
   onProviderCycleCompleted?: (status: ProviderStatus) => void;
 };

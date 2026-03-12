@@ -1,11 +1,15 @@
 import { Router } from 'express';
-import type { SettingsRepository } from '../db/repositories/settingsRepository.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import type { CollectorService } from '../services/collector.js';
 import { ProviderStatusStore } from '../services/providerStatusStore.js';
 
+type SettingsRepositoryLike = {
+  listSettings: () => Array<unknown>;
+  setSetting: (key: string, value: string) => unknown;
+};
+
 type AdminRouterDeps = {
-  settingsRepository: SettingsRepository;
+  settingsRepository: SettingsRepositoryLike;
   providerStatusStore: ProviderStatusStore;
   collectorService: CollectorService;
 };

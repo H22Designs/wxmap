@@ -1,7 +1,28 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { signAccessToken } from '../auth/tokens.js';
-import type { UserRepository } from '../db/repositories/userRepository.js';
+
+type UserRepositoryLike = {
+  findByUsername: (username: string) => {
+    id: string;
+    username: string;
+    email: string;
+    role: 'user' | 'admin';
+    passwordHash: string;
+  } | null;
+  findByEmail: (email: string) => { id: string } | null;
+  createUser: (args: {
+    username: string;
+    email: string;
+    passwordHash: string;
+    role?: 'user' | 'admin';
+  }) => {
+    id: string;
+    username: string;
+    email: string;
+    role: 'user' | 'admin';
+  };
+};
 
 type LoginPayload = {
   username?: unknown;
@@ -15,7 +36,7 @@ type RegisterPayload = {
 };
 
 type AuthRouterDeps = {
-  userRepository: UserRepository;
+  userRepository: UserRepositoryLike;
 };
 
 function sanitize(value: unknown): string {

@@ -2,6 +2,21 @@ import { Router } from 'express';
 
 export const radarRouter = Router();
 
+type RainViewerFrame = {
+  time: number;
+  path: string;
+};
+
+type RainViewerMapsResponse = {
+  host?: string;
+  radar?: {
+    past?: RainViewerFrame[];
+    nowcast?: RainViewerFrame[];
+  };
+};
+
+const DEFAULT_RAINVIEWER_HOST = 'https://tilecache.rainviewer.com';
+
 function parseNumber(input: unknown): number | null {
   if (typeof input !== 'string' || !input.trim()) {
     return null;
@@ -30,25 +45,45 @@ function parseHours(input: unknown): number {
   return 12;
 }
 
-radarRouter.get('/frames', (req, res) => {
+function buildTileUrl(host: string, path: string): string {
+  const normalizedHost = host.endsWith('/') ? host.slice(0, -1) : host;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${normalizedHost}${normalizedPath}/256/{z}/{x}/{y}/2/1_1.png`;
+}
+
+radarRouter.get('/frames', async (req, res) => {
   const { lat, lng, hours } = req.query;
   const parsedLat = parseNumber(lat);
   const parsedLng = parseNumber(lng);
   const selectedHours = parseHours(hours);
-  const frameCount = Math.max(4, selectedHours * 2);
-  const now = Date.now();
-  const frameStepMs = 5 * 60 * 1000;
+  const windowStartUnixSeconds = Math.floor(Date.now() / 1000) - selectedHours * 3600;
 
-  const frames = Array.from({ length: frameCount }).map((_, index) => {
-    const frameTimeMs = now - (frameCount - 1 - index) * frameStepMs;
-    const unixSeconds = Math.floor(frameTimeMs / 1000);
+  let frames: Array<{ id: string; observedAt: string; tileUrl: string }> = [];
 
-    return {
-      id: `rv-${unixSeconds}`,
-      observedAt: new Date(frameTimeMs).toISOString(),
-      tileUrl: `https://tilecache.rainviewer.com/v2/radar/${unixSeconds}/256/{z}/{x}/{y}/2/1_1.png`
-    };
-  });
+  try {
+    const response = await fetch('https://api.rainviewer.com/public/weather-maps.json', {
+      signal: AbortSignal.timeout(7_000)
+    });
+
+    if (!response.ok) {
+      throw new Error(`RainViewer metadata request failed with status ${response.status}`);
+    }
+
+    const payload = (await response.json()) as RainViewerMapsResponse;
+    const host = payload.host && payload.host.trim() ? payload.host : DEFAULT_RAINVIEWER_HOST;
+    const allFrames = [...(payload.radar?.past ?? []), ...(payload.radar?.nowcast ?? [])];
+
+    frames = allFrames
+      .filter((frame) => Number.isFinite(frame.time) && frame.time >= windowStartUnixSeconds && !!frame.path)
+      .sort((a, b) => a.time - b.time)
+      .map((frame) => ({
+        id: `rv-${frame.time}`,
+        observedAt: new Date(frame.time * 1000).toISOString(),
+        tileUrl: buildTileUrl(host, frame.path)
+      }));
+  } catch {
+    frames = [];
+  }
 
   res.status(200).json({
     location: {

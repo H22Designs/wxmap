@@ -235,16 +235,13 @@ const collectorService = new CollectorService({
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/v1/weather', weatherRouter({
-  stationRepository: stationRepository as never,
-  observationRepository: observationRepository as never
-}));
+app.use('/api/v1/weather', weatherRouter({ stationRepository, observationRepository }));
 app.use('/api/v1/radar', radarRouter);
-app.use('/api/v1/auth', authRouter({ userRepository: userRepository as never }));
+app.use('/api/v1/auth', authRouter({ userRepository }));
 app.use(
   '/api/v1/admin',
   adminRouter({
-    settingsRepository: settingsRepository as never,
+    settingsRepository,
     providerStatusStore,
     collectorService
   })
