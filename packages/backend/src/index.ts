@@ -270,10 +270,18 @@ async function createRepositories(): Promise<{
       mode: 'sqlite'
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
     console.warn(
       '[wxmap] Falling back to in-memory data store. SQLite bindings are unavailable in this environment.',
-      error instanceof Error ? error.message : error
+      errorMessage
     );
+
+    if (/better-sqlite3|bindings?/i.test(errorMessage)) {
+      console.warn(
+        '[wxmap] Fix hint: rebuild native bindings for your current Node version -> npm rebuild better-sqlite3 --workspace=packages/backend'
+      );
+    }
 
     return {
       ...createInMemoryRepositories(),
@@ -314,6 +322,7 @@ app.get('/api/v1/health', (_req, res) => {
   res.status(200).json({
     status: 'ok',
     service: 'wxmap-backend',
+    storeMode: mode,
     timestamp: new Date().toISOString(),
     realtimeClients: broadcaster.getClientCount()
   });

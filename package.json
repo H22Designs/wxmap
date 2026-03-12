@@ -8,6 +8,8 @@
   "scripts": {
     "dev:backend": "npm run dev --workspace=packages/backend",
     "dev:frontend": "npm run dev --workspace=packages/frontend",
+    "health:backend": "node -e \"fetch('http://localhost:3001/api/v1/health').then((response)=>response.json()).then((payload)=>{console.log(JSON.stringify(payload, null, 2));}).catch((error)=>{console.error(error?.message ?? error);process.exit(1);})\"",
+    "rebuild:sqlite": "npm rebuild better-sqlite3 --workspace=packages/backend",
     "build": "npm run build --workspace=packages/backend && npm run build --workspace=packages/frontend",
     "lint": "npm run lint --workspace=packages/backend && npm run lint --workspace=packages/frontend",
     "test": "npm run test --workspace=packages/backend && npm run test --workspace=packages/frontend"
