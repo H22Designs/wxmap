@@ -22,8 +22,9 @@ describe('AuthPanel', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: 'Working...' })).toBeDisabled();
-    expect(screen.getAllByRole('button', { name: 'Working...' })).toHaveLength(2);
+    const workingButtons = screen.getAllByRole('button', { name: 'Working...' });
+    expect(workingButtons).toHaveLength(2);
+    expect(workingButtons.every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it('calls login and register handlers', () => {
