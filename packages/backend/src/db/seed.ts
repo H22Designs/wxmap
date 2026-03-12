@@ -55,35 +55,70 @@ export function seedDatabase(db: Database.Database): void {
 
   const initialSettings: Array<[string, string]> = [
     ['collector.interval.pws.minutes', '5'],
-    ['collector.interval.nws.minutes', '10']
+    ['collector.interval.nws.minutes', '10'],
+    ['provider.wunderground.enabled', 'false']
   ];
 
   for (const [key, value] of initialSettings) {
     upsertSetting.run(key, value);
   }
 
+  const deactivateLegacyStation = db.prepare(`
+    UPDATE stations
+    SET active = 0
+    WHERE id = ?
+  `);
+
+  deactivateLegacyStation.run('station-nws-sample-1');
+
   insertStation.run(
-    'station-nws-sample-1',
-    'nws',
-    'KSEA',
-    'Seattle-Tacoma Intl (Sample)',
-    47.4489,
-    -122.3094,
-    132,
+    'station-wu-kalmillp10',
+    'wunderground',
+    'kalmillp10',
+    'KALMILLP10 (Built-in)',
+    45.6573,
+    -68.7098,
+    104,
     1
   );
 
+  insertStation.run(
+    'station-wu-kalmillp8',
+    'wunderground',
+    'kalmillp8',
+    'KALMILLP8 (Built-in)',
+    45.655,
+    -68.706,
+    106,
+    1
+  );
+
+  const now = Date.now();
+
   insertObservation.run(
-    'obs-station-nws-sample-1-latest',
-    'station-nws-sample-1',
-    new Date().toISOString(),
-    10.3,
-    78,
-    1012.5,
-    4.3,
-    210,
+    'obs-station-wu-kalmillp10-latest',
+    'station-wu-kalmillp10',
+    new Date(now).toISOString(),
+    7.8,
+    81,
+    1015.1,
+    2.7,
+    144,
     0,
-    JSON.stringify({ source: 'seed' })
+    JSON.stringify({ source: 'seed', station: 'kalmillp10' })
+  );
+
+  insertObservation.run(
+    'obs-station-wu-kalmillp8-latest',
+    'station-wu-kalmillp8',
+    new Date(now - 3 * 60_000).toISOString(),
+    8.2,
+    79,
+    1014.8,
+    3.1,
+    152,
+    0,
+    JSON.stringify({ source: 'seed', station: 'kalmillp8' })
   );
 
   bootstrapDevAdmin(db);
