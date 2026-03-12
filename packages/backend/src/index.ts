@@ -9,15 +9,17 @@ import { radarRouter } from './routes/radarRoutes.js';
 import { weatherRouter } from './routes/weatherRoutes.js';
 import { RealtimeBroadcaster } from './services/broadcaster.js';
 import { CollectorService } from './services/collector.js';
+import { getKnownProviders } from './services/providerCatalog.js';
 import { ProviderStatusStore } from './services/providerStatusStore.js';
-import type { Observation, Setting, Station, User } from './types/models.js';
+import type { Observation, ProviderConfig, Setting, Station, User } from './types/models.js';
 
 dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
+const knownProviders = getKnownProviders();
 const providerStatusStore = new ProviderStatusStore({
-  providers: ['nws', 'madis', 'cwop', 'wunderground', 'ambient', 'acurite']
+  providers: knownProviders
 });
 
 type StationRepositoryLike = {
@@ -46,11 +48,24 @@ type UserRepositoryLike = {
   }) => User;
 };
 
+type ProviderConfigRepositoryLike = {
+  listConfigs: () => ProviderConfig[];
+  upsertConfig: (input: {
+    provider: string;
+    enabled?: boolean;
+    intervalMinutes?: number;
+    endpoint?: string | null;
+    apiKey?: string | null;
+    apiSecret?: string | null;
+  }) => ProviderConfig;
+};
+
 function createInMemoryRepositories(): {
   stationRepository: StationRepositoryLike;
   observationRepository: ObservationRepositoryLike;
   settingsRepository: SettingsRepositoryLike;
   userRepository: UserRepositoryLike;
+  providerConfigRepository: ProviderConfigRepositoryLike;
 } {
   const nowIso = new Date().toISOString();
   const now = Date.now();
@@ -165,6 +180,23 @@ function createInMemoryRepositories(): {
   ]);
 
   const users: User[] = [];
+  const providerConfigs = new Map<string, ProviderConfig>(
+    knownProviders.map((provider) => {
+      const now = new Date().toISOString();
+      return [
+        provider,
+        {
+          provider,
+          enabled: provider === 'nws',
+          intervalMinutes: provider === 'nws' ? 10 : 5,
+          endpoint: null,
+          apiKey: null,
+          apiSecret: null,
+          updatedAt: now
+        }
+      ];
+    })
+  );
 
   return {
     stationRepository: {
@@ -239,6 +271,27 @@ function createInMemoryRepositories(): {
         users.push(created);
         return created;
       }
+    },
+    providerConfigRepository: {
+      listConfigs: () => [...providerConfigs.values()].sort((a, b) => a.provider.localeCompare(b.provider)),
+      upsertConfig: (input) => {
+        const existing = providerConfigs.get(input.provider);
+        const updated: ProviderConfig = {
+          provider: input.provider,
+          enabled: input.enabled ?? existing?.enabled ?? false,
+          intervalMinutes: Math.max(
+            1,
+            Math.floor(input.intervalMinutes ?? existing?.intervalMinutes ?? 5)
+          ),
+          endpoint: input.endpoint ?? existing?.endpoint ?? null,
+          apiKey: input.apiKey ?? existing?.apiKey ?? null,
+          apiSecret: input.apiSecret ?? existing?.apiSecret ?? null,
+          updatedAt: new Date().toISOString()
+        };
+
+        providerConfigs.set(input.provider, updated);
+        return updated;
+      }
     }
   };
 }
@@ -248,13 +301,22 @@ async function createRepositories(): Promise<{
   observationRepository: ObservationRepositoryLike;
   settingsRepository: SettingsRepositoryLike;
   userRepository: UserRepositoryLike;
+  providerConfigRepository: ProviderConfigRepositoryLike;
   mode: 'sqlite' | 'memory';
 }> {
   try {
-    const [{ getDb }, { ObservationRepository }, { SettingsRepository }, { StationRepository }, { UserRepository }] =
+    const [
+      { getDb },
+      { ObservationRepository },
+      { ProviderConfigRepository },
+      { SettingsRepository },
+      { StationRepository },
+      { UserRepository }
+    ] =
       await Promise.all([
         import('./db/database.js'),
         import('./db/repositories/observationRepository.js'),
+        import('./db/repositories/providerConfigRepository.js'),
         import('./db/repositories/settingsRepository.js'),
         import('./db/repositories/stationRepository.js'),
         import('./db/repositories/userRepository.js')
@@ -265,6 +327,7 @@ async function createRepositories(): Promise<{
     return {
       stationRepository: new StationRepository(db),
       observationRepository: new ObservationRepository(db),
+      providerConfigRepository: new ProviderConfigRepository(db),
       settingsRepository: new SettingsRepository(db),
       userRepository: new UserRepository(db),
       mode: 'sqlite'
@@ -290,13 +353,20 @@ async function createRepositories(): Promise<{
   }
 }
 
-const { stationRepository, observationRepository, settingsRepository, userRepository, mode } = await createRepositories();
+const {
+  stationRepository,
+  observationRepository,
+  settingsRepository,
+  userRepository,
+  providerConfigRepository,
+  mode
+} = await createRepositories();
 
 const httpServer = createServer(app);
 const broadcaster = new RealtimeBroadcaster(httpServer);
 
 const collectorService = new CollectorService({
-  settingsRepository,
+  providerConfigRepository,
   providerStatusStore,
   onProviderCycleCompleted: (status) => {
     broadcaster.broadcast('collector.provider-sync', { ...status });
@@ -313,6 +383,7 @@ app.use(
   '/api/v1/admin',
   adminRouter({
     settingsRepository,
+    providerConfigRepository,
     providerStatusStore,
     collectorService
   })

@@ -2,6 +2,16 @@ export type UserRole = 'user' | 'admin';
 
 export type ProviderSyncState = 'idle' | 'running' | 'ok' | 'error';
 
+export type ProviderConfig = {
+  provider: string;
+  enabled: boolean;
+  intervalMinutes: number;
+  endpoint: string | null;
+  apiKey: string | null;
+  apiSecret: string | null;
+  updatedAt: string;
+};
+
 export type ProviderStatus = {
   provider: string;
   enabled: boolean;

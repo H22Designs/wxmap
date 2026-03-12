@@ -42,7 +42,7 @@ describe('ProviderStatusPanel', () => {
     );
 
     expect(screen.getByText('loaded (2)')).toBeInTheDocument();
-  expect(screen.getByText('Live connected')).toBeInTheDocument();
+    expect(screen.getByText('Live connected')).toBeInTheDocument();
     expect(screen.getByText('nws')).toBeInTheDocument();
     expect(screen.getByText('madis')).toBeInTheDocument();
 
@@ -53,7 +53,8 @@ describe('ProviderStatusPanel', () => {
     expect(onSaveProviderConfig).toHaveBeenCalledWith({
       provider: 'nws',
       enabled: true,
-      intervalMinutes: 10
+      intervalMinutes: 10,
+      endpoint: null
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Trigger sync for nws' }));

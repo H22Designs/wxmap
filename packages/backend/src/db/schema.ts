@@ -45,5 +45,15 @@ export function applySchema(db: Database.Database): void {
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
+
+    CREATE TABLE IF NOT EXISTS provider_configs (
+      provider TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      interval_minutes INTEGER NOT NULL DEFAULT 5,
+      endpoint TEXT,
+      api_key TEXT,
+      api_secret TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
   `);
 }

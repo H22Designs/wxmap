@@ -63,6 +63,8 @@ export type AdminProviderStatus = {
   provider: string;
   enabled: boolean;
   intervalMinutes: number;
+  endpoint?: string | null;
+  updatedAt?: string;
   state: 'idle' | 'running' | 'ok' | 'error';
   lastSyncAt: string | null;
   lastError: string | null;
@@ -327,8 +329,9 @@ export async function updateAdminProviderConfig(input: {
   provider: string;
   enabled?: boolean;
   intervalMinutes?: number;
+  endpoint?: string | null;
 }): Promise<AdminProviderStatus> {
-  const body: Record<string, boolean | number> = {};
+  const body: Record<string, boolean | number | string | null> = {};
 
   if (typeof input.enabled === 'boolean') {
     body.enabled = input.enabled;
@@ -336,6 +339,10 @@ export async function updateAdminProviderConfig(input: {
 
   if (typeof input.intervalMinutes === 'number') {
     body.intervalMinutes = input.intervalMinutes;
+  }
+
+  if (input.endpoint !== undefined) {
+    body.endpoint = input.endpoint;
   }
 
   const response = await fetch(`${apiBaseUrl}/admin/providers/${encodeURIComponent(input.provider)}`, {

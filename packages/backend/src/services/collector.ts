@@ -1,12 +1,17 @@
 import type { ProviderStatus } from '../types/models.js';
 import { ProviderStatusStore } from './providerStatusStore.js';
+import { getKnownProviders } from './providerCatalog.js';
 
-type SettingsRepositoryLike = {
-  listSettings: () => Array<{ key: string; value: string }>;
+type ProviderConfigRepositoryLike = {
+  listConfigs: () => Array<{
+    provider: string;
+    enabled: boolean;
+    intervalMinutes: number;
+  }>;
 };
 
 type CollectorServiceDeps = {
-  settingsRepository: SettingsRepositoryLike;
+  providerConfigRepository: ProviderConfigRepositoryLike;
   providerStatusStore: ProviderStatusStore;
   onProviderCycleCompleted?: (status: ProviderStatus) => void;
 };
@@ -17,11 +22,9 @@ type ProviderPlan = {
   intervalMinutes: number;
 };
 
-const PWS_PROVIDERS = new Set(['wunderground', 'ambient', 'acurite']);
-
 export class CollectorService {
   private readonly timers = new Map<string, NodeJS.Timeout>();
-  private readonly providers = ['nws', 'madis', 'cwop', 'wunderground', 'ambient', 'acurite'];
+  private readonly providers = getKnownProviders();
 
   constructor(private readonly deps: CollectorServiceDeps) {}
 
@@ -44,21 +47,16 @@ export class CollectorService {
   refreshSchedules(): void {
     this.stop();
 
-    const settings = this.deps.settingsRepository.listSettings();
-    const settingsMap = new Map(settings.map((setting) => [setting.key, setting.value]));
+    const configByProvider = new Map(
+      this.deps.providerConfigRepository
+        .listConfigs()
+        .map((config) => [config.provider, config] as const)
+    );
 
     for (const provider of this.providers) {
-      const isPws = PWS_PROVIDERS.has(provider);
-      const defaultIntervalKey = isPws
-        ? 'collector.interval.pws.minutes'
-        : 'collector.interval.nws.minutes';
-      const providerIntervalKey = `provider.${provider}.interval.minutes`;
-      const intervalMinutes = this.parsePositiveInt(
-        settingsMap.get(providerIntervalKey) ?? settingsMap.get(defaultIntervalKey),
-        isPws ? 5 : 10
-      );
-      const enabledDefault = provider === 'nws';
-      const enabled = this.parseBoolean(settingsMap.get(`provider.${provider}.enabled`), enabledDefault);
+      const config = configByProvider.get(provider);
+      const intervalMinutes = this.parsePositiveInt(config?.intervalMinutes, provider === 'nws' ? 10 : 5);
+      const enabled = this.parseBoolean(config?.enabled, provider === 'nws');
 
       const plan: ProviderPlan = {
         provider,
@@ -134,8 +132,8 @@ export class CollectorService {
     }
   }
 
-  private parsePositiveInt(value: string | undefined, fallback: number): number {
-    if (!value) {
+  private parsePositiveInt(value: number | undefined, fallback: number): number {
+    if (typeof value !== 'number') {
       return fallback;
     }
 
@@ -147,21 +145,8 @@ export class CollectorService {
     return Math.floor(parsed);
   }
 
-  private parseBoolean(value: string | undefined, fallback: boolean): boolean {
-    if (!value) {
-      return fallback;
-    }
-
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-      return true;
-    }
-
-    if (normalized === 'false' || normalized === '0' || normalized === 'no') {
-      return false;
-    }
-
-    return fallback;
+  private parseBoolean(value: boolean | undefined, fallback: boolean): boolean {
+    return typeof value === 'boolean' ? value : fallback;
   }
 
   private async simulateProviderFetch(_provider: string): Promise<void> {

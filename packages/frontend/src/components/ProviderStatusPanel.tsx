@@ -14,6 +14,7 @@ type ProviderStatusPanelProps = {
     provider: string;
     enabled: boolean;
     intervalMinutes: number;
+    endpoint: string | null;
   }) => void;
   onReload: () => void;
 };
@@ -21,6 +22,7 @@ type ProviderStatusPanelProps = {
 type ProviderDraft = {
   enabled: boolean;
   intervalMinutes: number;
+  endpoint: string;
 };
 
 function getRealtimeBadge(realtimeState: ProviderStatusPanelProps['realtimeState']): {
@@ -71,7 +73,8 @@ export function ProviderStatusPanel({
     for (const provider of providers) {
       next[provider.provider] = {
         enabled: provider.enabled,
-        intervalMinutes: provider.intervalMinutes
+        intervalMinutes: provider.intervalMinutes,
+        endpoint: provider.endpoint ?? ''
       };
     }
 
@@ -115,6 +118,7 @@ export function ProviderStatusPanel({
                 <th align="left">Enabled</th>
                 <th align="left">State</th>
                 <th align="left">Interval</th>
+                <th align="left">Endpoint</th>
                 <th align="left">Last Sync</th>
                 <th align="left">Next Sync</th>
                 <th align="left">Actions</th>
@@ -139,8 +143,8 @@ export function ProviderStatusPanel({
                               ...previous,
                               [item.provider]: {
                                 enabled: event.target.checked,
-                                intervalMinutes:
-                                  previous[item.provider]?.intervalMinutes ?? item.intervalMinutes
+                                intervalMinutes: previous[item.provider]?.intervalMinutes ?? item.intervalMinutes,
+                                endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? ''
                               }
                             }))
                           }
@@ -165,7 +169,8 @@ export function ProviderStatusPanel({
                               ...previous,
                               [item.provider]: {
                                 enabled: previous[item.provider]?.enabled ?? item.enabled,
-                                intervalMinutes
+                                intervalMinutes,
+                                endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? ''
                               }
                             }));
                           }}
@@ -175,6 +180,25 @@ export function ProviderStatusPanel({
                         min
                       </label>
                     </div>
+                  </td>
+                  <td>
+                    <input
+                      type="text"
+                      value={(draftByProvider[item.provider] ?? item).endpoint ?? ''}
+                      onChange={(event) =>
+                        setDraftByProvider((previous) => ({
+                          ...previous,
+                          [item.provider]: {
+                            enabled: previous[item.provider]?.enabled ?? item.enabled,
+                            intervalMinutes: previous[item.provider]?.intervalMinutes ?? item.intervalMinutes,
+                            endpoint: event.target.value
+                          }
+                        }))
+                      }
+                      placeholder="https://..."
+                      aria-label={`Endpoint for ${item.provider}`}
+                      style={{ minWidth: 180 }}
+                    />
                   </td>
                   <td>{formatDate(item.lastSyncAt)}</td>
                   <td>{formatDate(item.nextSyncAt)}</td>
@@ -186,7 +210,8 @@ export function ProviderStatusPanel({
                           onSaveProviderConfig({
                             provider: item.provider,
                             enabled: (draftByProvider[item.provider] ?? item).enabled,
-                            intervalMinutes: (draftByProvider[item.provider] ?? item).intervalMinutes
+                            intervalMinutes: (draftByProvider[item.provider] ?? item).intervalMinutes,
+                            endpoint: ((draftByProvider[item.provider] ?? item).endpoint ?? '').trim() || null
                           })
                         }
                         disabled={savingProviderConfig === item.provider}

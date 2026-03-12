@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import { PROVIDER_CATALOG } from '../services/providerCatalog.js';
 
 function shouldBootstrapDevAdmin(): boolean {
   return (process.env.DEV_BOOTSTRAP_ADMIN ?? '').trim().toLowerCase() === 'true';
@@ -53,6 +54,23 @@ export function seedDatabase(db: Database.Database): void {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  const upsertProviderConfig = db.prepare(`
+    INSERT INTO provider_configs (
+      provider,
+      enabled,
+      interval_minutes,
+      endpoint,
+      api_key,
+      api_secret,
+      updated_at
+    )
+    VALUES (?, ?, ?, NULL, NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(provider) DO UPDATE SET
+      enabled = provider_configs.enabled,
+      interval_minutes = provider_configs.interval_minutes,
+      updated_at = provider_configs.updated_at
+  `);
+
   const initialSettings: Array<[string, string]> = [
     ['collector.interval.pws.minutes', '5'],
     ['collector.interval.nws.minutes', '10'],
@@ -62,6 +80,14 @@ export function seedDatabase(db: Database.Database): void {
 
   for (const [key, value] of initialSettings) {
     upsertSetting.run(key, value);
+  }
+
+  for (const provider of PROVIDER_CATALOG) {
+    upsertProviderConfig.run(
+      provider.id,
+      provider.defaultEnabled ? 1 : 0,
+      provider.defaultIntervalMinutes
+    );
   }
 
   const deactivateLegacyStation = db.prepare(`
