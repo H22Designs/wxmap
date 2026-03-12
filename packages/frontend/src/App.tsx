@@ -32,6 +32,7 @@ import { SessionBadge } from './components/SessionBadge';
 import { StationHistoryChart } from './components/StationHistoryChart';
 import { StationMap, type MetricKey } from './components/StationMap';
 import { ToastBanner, type Toast } from './components/ToastBanner';
+import { UserExperiencePanel, type UnitSystem } from './components/UserExperiencePanel';
 import { sectionGridStyle, twoColumnGridStyle } from './styles/ui';
 import { connectProviderStatusStream } from './services/realtime';
 import {
@@ -43,6 +44,10 @@ import {
 const SESSION_STORAGE_KEY = 'wxmap.session.v1';
 const THEME_STORAGE_KEY = 'wxmap.theme.v1';
 const MAP_VIEW_MODE_STORAGE_KEY = 'wxmap.mapViewMode.v1';
+const UNIT_SYSTEM_STORAGE_KEY = 'wxmap.unitSystem.v1';
+const SHOW_RADAR_LAYER_STORAGE_KEY = 'wxmap.showRadarLayer.v1';
+const SHOW_STATION_LAYER_STORAGE_KEY = 'wxmap.showStationLayer.v1';
+const VISIBLE_PROVIDERS_STORAGE_KEY = 'wxmap.visibleProviders.v1';
 const MAX_PROVIDER_ACTIVITY = 25;
 
 export function App(): JSX.Element {
@@ -76,6 +81,10 @@ export function App(): JSX.Element {
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('tempC');
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
   const [mapViewMode, setMapViewMode] = useState<'2d' | '3d'>('2d');
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
+  const [showRadarLayer, setShowRadarLayer] = useState(true);
+  const [showStationLayer, setShowStationLayer] = useState(true);
+  const [visibleProviders, setVisibleProviders] = useState<string[]>([]);
   const [radarFrames, setRadarFrames] = useState<RadarFrame[]>([]);
   const [radarHours, setRadarHours] = useState<1 | 3 | 6 | 12>(3);
   const [radarFrameDensity, setRadarFrameDensity] = useState<RadarFrameDensity>('normal');
@@ -225,6 +234,33 @@ export function App(): JSX.Element {
     if (savedMapViewMode === '2d' || savedMapViewMode === '3d') {
       setMapViewMode(savedMapViewMode);
     }
+
+    const savedUnitSystem = window.localStorage.getItem(UNIT_SYSTEM_STORAGE_KEY);
+    if (savedUnitSystem === 'metric' || savedUnitSystem === 'imperial') {
+      setUnitSystem(savedUnitSystem);
+    }
+
+    const savedShowRadarLayer = window.localStorage.getItem(SHOW_RADAR_LAYER_STORAGE_KEY);
+    if (savedShowRadarLayer === 'true' || savedShowRadarLayer === 'false') {
+      setShowRadarLayer(savedShowRadarLayer === 'true');
+    }
+
+    const savedShowStationLayer = window.localStorage.getItem(SHOW_STATION_LAYER_STORAGE_KEY);
+    if (savedShowStationLayer === 'true' || savedShowStationLayer === 'false') {
+      setShowStationLayer(savedShowStationLayer === 'true');
+    }
+
+    const savedVisibleProviders = window.localStorage.getItem(VISIBLE_PROVIDERS_STORAGE_KEY);
+    if (savedVisibleProviders) {
+      try {
+        const parsed = JSON.parse(savedVisibleProviders) as string[];
+        if (Array.isArray(parsed)) {
+          setVisibleProviders(parsed.filter((item) => typeof item === 'string'));
+        }
+      } catch {
+        // Ignore malformed persisted preferences
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -234,6 +270,22 @@ export function App(): JSX.Element {
   useEffect(() => {
     window.localStorage.setItem(MAP_VIEW_MODE_STORAGE_KEY, mapViewMode);
   }, [mapViewMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem(UNIT_SYSTEM_STORAGE_KEY, unitSystem);
+  }, [unitSystem]);
+
+  useEffect(() => {
+    window.localStorage.setItem(SHOW_RADAR_LAYER_STORAGE_KEY, String(showRadarLayer));
+  }, [showRadarLayer]);
+
+  useEffect(() => {
+    window.localStorage.setItem(SHOW_STATION_LAYER_STORAGE_KEY, String(showStationLayer));
+  }, [showStationLayer]);
+
+  useEffect(() => {
+    window.localStorage.setItem(VISIBLE_PROVIDERS_STORAGE_KEY, JSON.stringify(visibleProviders));
+  }, [visibleProviders]);
 
   useEffect(() => {
     if (!session) {
@@ -584,13 +636,37 @@ export function App(): JSX.Element {
     return ['all', ...Array.from(providers).sort()];
   }, [stations]);
 
-  const filteredStations = useMemo(() => {
-    if (selectedProvider === 'all') {
-      return stations;
+  useEffect(() => {
+    const stationProviders = providerOptions.filter((provider) => provider !== 'all');
+
+    if (stationProviders.length === 0) {
+      setVisibleProviders([]);
+      return;
     }
 
-    return stations.filter((station) => station.provider === selectedProvider);
-  }, [stations, selectedProvider]);
+    setVisibleProviders((previous) => {
+      const previousInCurrent = previous.filter((provider) => stationProviders.includes(provider));
+
+      if (previousInCurrent.length === 0) {
+        return stationProviders;
+      }
+
+      return previousInCurrent;
+    });
+  }, [providerOptions]);
+
+  const filteredStations = useMemo(() => {
+    const byProviderSelection =
+      selectedProvider === 'all'
+        ? stations
+        : stations.filter((station) => station.provider === selectedProvider);
+
+    if (visibleProviders.length === 0) {
+      return byProviderSelection;
+    }
+
+    return byProviderSelection.filter((station) => visibleProviders.includes(station.provider));
+  }, [stations, selectedProvider, visibleProviders]);
 
   useEffect(() => {
     if (filteredStations.length === 0) {
@@ -635,14 +711,26 @@ export function App(): JSX.Element {
     }
 
     if (metric === 'tempC') {
-      return current.tempC === null ? 'Temp: N/A' : `Temp: ${current.tempC.toFixed(1)} °C`;
+      if (current.tempC === null) {
+        return 'Temp: N/A';
+      }
+
+      return unitSystem === 'imperial'
+        ? `Temp: ${(current.tempC * 9 / 5 + 32).toFixed(1)} °F`
+        : `Temp: ${current.tempC.toFixed(1)} °C`;
     }
 
     if (metric === 'humidityPct') {
       return current.humidityPct === null ? 'Humidity: N/A' : `Humidity: ${current.humidityPct.toFixed(0)} %`;
     }
 
-    return current.windSpeedMs === null ? 'Wind: N/A' : `Wind: ${current.windSpeedMs.toFixed(1)} m/s`;
+    if (current.windSpeedMs === null) {
+      return 'Wind: N/A';
+    }
+
+    return unitSystem === 'imperial'
+      ? `Wind: ${(current.windSpeedMs * 2.23693629).toFixed(1)} mph`
+      : `Wind: ${current.windSpeedMs.toFixed(1)} m/s`;
   }
 
   return (
@@ -771,6 +859,24 @@ export function App(): JSX.Element {
           onToggleRadarPlaying={() => setRadarPlaying((previous) => !previous)}
           onToggleDarkMode={() => setDarkMode((previous) => !previous)}
         />
+        <UserExperiencePanel
+          darkMode={darkMode}
+          mapViewMode={mapViewMode}
+          unitSystem={unitSystem}
+          showRadarLayer={showRadarLayer}
+          showStationLayer={showStationLayer}
+          providerOptions={providerOptions}
+          visibleProviders={visibleProviders}
+          onToggleDarkMode={() => setDarkMode((previous) => !previous)}
+          onMapViewModeChange={setMapViewMode}
+          onUnitSystemChange={setUnitSystem}
+          onShowRadarLayerChange={setShowRadarLayer}
+          onShowStationLayerChange={setShowStationLayer}
+          onVisibleProvidersChange={(providers) => {
+            const deduped = Array.from(new Set(providers));
+            setVisibleProviders(deduped);
+          }}
+        />
         {stationsStatus === 'loading...' ? (
           <div aria-label="Loading station map" role="status" aria-live="polite" style={{ display: 'grid', gap: 8 }}>
             <LoadingSkeleton ariaLabel="Loading map summary" />
@@ -783,6 +889,9 @@ export function App(): JSX.Element {
           currentByStationId={currentByStationId}
           selectedMetric={selectedMetric}
           mapViewMode={mapViewMode}
+          unitSystem={unitSystem}
+          showRadarLayer={showRadarLayer}
+          showStationLayer={showStationLayer}
           radarFrames={radarFrames}
           radarFrameDensity={radarFrameDensity}
           radarOpacity={radarOpacity}
@@ -801,6 +910,7 @@ export function App(): JSX.Element {
             stationName={selectedStation.name}
             observations={selectedStationHistory}
             metric={selectedMetric}
+            unitSystem={unitSystem}
           />
         ) : null}
         </section>

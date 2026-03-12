@@ -9,6 +9,7 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import type { MetricKey } from './StationMap';
+import type { UnitSystem } from './UserExperiencePanel';
 import type { Observation } from '../services/api';
 import { panelStyle } from '../styles/ui';
 
@@ -18,41 +19,54 @@ type StationHistoryChartProps = {
   stationName: string;
   observations: Observation[];
   metric: MetricKey;
+  unitSystem: UnitSystem;
 };
 
-function getMetricValue(metric: MetricKey, observation: Observation): number | null {
+function getMetricValue(metric: MetricKey, observation: Observation, unitSystem: UnitSystem): number | null {
   if (metric === 'tempC') {
-    return observation.tempC;
+    if (observation.tempC === null) {
+      return null;
+    }
+
+    return unitSystem === 'imperial'
+      ? observation.tempC * 9 / 5 + 32
+      : observation.tempC;
   }
 
   if (metric === 'humidityPct') {
     return observation.humidityPct;
   }
 
-  return observation.windSpeedMs;
+  if (observation.windSpeedMs === null) {
+    return null;
+  }
+
+  return unitSystem === 'imperial'
+    ? observation.windSpeedMs * 2.23693629
+    : observation.windSpeedMs;
 }
 
-function getMetricLabel(metric: MetricKey): string {
+function getMetricLabel(metric: MetricKey, unitSystem: UnitSystem): string {
   if (metric === 'tempC') {
-    return 'Temperature (°C)';
+    return unitSystem === 'imperial' ? 'Temperature (°F)' : 'Temperature (°C)';
   }
 
   if (metric === 'humidityPct') {
     return 'Humidity (%)';
   }
 
-  return 'Wind speed (m/s)';
+  return unitSystem === 'imperial' ? 'Wind speed (mph)' : 'Wind speed (m/s)';
 }
 
-export function StationHistoryChart({ stationName, observations, metric }: StationHistoryChartProps): JSX.Element {
+export function StationHistoryChart({ stationName, observations, metric, unitSystem }: StationHistoryChartProps): JSX.Element {
   const points = [...observations].reverse();
 
   const chartData = {
     labels: points.map((observation) => new Date(observation.observedAt).toLocaleTimeString()),
     datasets: [
       {
-        label: getMetricLabel(metric),
-        data: points.map((observation) => getMetricValue(metric, observation)),
+        label: getMetricLabel(metric, unitSystem),
+        data: points.map((observation) => getMetricValue(metric, observation, unitSystem)),
         borderColor: '#2563eb',
         backgroundColor: 'rgba(37, 99, 235, 0.18)',
         pointRadius: 2,

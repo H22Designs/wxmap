@@ -8,6 +8,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
 import type { CurrentObservation, RadarFrame, RadarFrameDensity, Station } from '../services/api';
 import { mapContainerStyle } from '../styles/ui';
+import type { UnitSystem } from './UserExperiencePanel';
 
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -20,6 +21,9 @@ type StationMapProps = {
   currentByStationId: Record<string, CurrentObservation | undefined>;
   selectedMetric: MetricKey;
   mapViewMode: '2d' | '3d';
+  unitSystem: UnitSystem;
+  showRadarLayer: boolean;
+  showStationLayer: boolean;
   radarFrames: RadarFrame[];
   radarFrameDensity: RadarFrameDensity;
   radarOpacity: number;
@@ -92,20 +96,24 @@ function getMetricValue(metric: MetricKey, current: CurrentObservation | undefin
   return current.windSpeedMs;
 }
 
-function getMetricLabel(metric: MetricKey, value: number | null): string {
+function getMetricLabel(metric: MetricKey, value: number | null, unitSystem: UnitSystem): string {
   if (value === null) {
     return 'N/A';
   }
 
   if (metric === 'tempC') {
-    return `${value.toFixed(1)} °C`;
+    return unitSystem === 'imperial'
+      ? `${(value * 9 / 5 + 32).toFixed(1)} °F`
+      : `${value.toFixed(1)} °C`;
   }
 
   if (metric === 'humidityPct') {
     return `${value.toFixed(0)} %`;
   }
 
-  return `${value.toFixed(1)} m/s`;
+  return unitSystem === 'imperial'
+    ? `${(value * 2.23693629).toFixed(1)} mph`
+    : `${value.toFixed(1)} m/s`;
 }
 
 function getCenter(stations: Station[]): [number, number] {
@@ -131,6 +139,9 @@ export function StationMap({
   currentByStationId,
   selectedMetric,
   mapViewMode,
+  unitSystem,
+  showRadarLayer,
+  showStationLayer,
   radarFrames,
   radarFrameDensity,
   radarOpacity,
@@ -243,7 +254,8 @@ export function StationMap({
               : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
           }
         />
-        {radarFrames.map((frame, frameIndex) => {
+        {showRadarLayer
+          ? radarFrames.map((frame, frameIndex) => {
           const isBase = frameIndex === baseFrameIndex;
           const isNext = frameIndex === nextFrameIndex;
           const opacity =
@@ -266,8 +278,9 @@ export function StationMap({
               className="wx-radar-layer"
             />
           );
-        })}
-        {stations.map((station) => {
+        })
+          : null}
+        {showStationLayer ? stations.map((station) => {
           const current = currentByStationId[station.id];
           const metricValue = getMetricValue(selectedMetric, current);
           const isSelected = station.id === selectedStationId;
@@ -292,15 +305,17 @@ export function StationMap({
                 <br />
                 Provider: {station.provider}
                 <br />
-                Metric ({selectedMetric}): {getMetricLabel(selectedMetric, metricValue)}
+                Metric ({selectedMetric}): {getMetricLabel(selectedMetric, metricValue, unitSystem)}
                 <br />
                 Wind: {current?.windSpeedMs === null || current?.windSpeedMs === undefined
                   ? 'N/A'
-                  : `${current.windSpeedMs.toFixed(1)} m/s`}
+                  : unitSystem === 'imperial'
+                    ? `${(current.windSpeedMs * 2.23693629).toFixed(1)} mph`
+                    : `${current.windSpeedMs.toFixed(1)} m/s`}
               </Popup>
             </CircleMarker>
           );
-        })}
+        }) : null}
       </MapContainer>
     </div>
   );
