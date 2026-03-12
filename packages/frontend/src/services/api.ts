@@ -27,7 +27,7 @@ type RadarFramesResponse = {
   frames: RadarFrame[];
 };
 
-export type RadarFrameDensity = 'normal' | 'dense';
+export type RadarFrameDensity = 'normal' | 'dense' | 'ultra';
 
 type AuthUser = {
   id: string;
@@ -183,7 +183,7 @@ export async function fetchRadarFrames(input: {
     lat: input.lat.toFixed(4),
     lng: input.lng.toFixed(4),
     hours: String(input.hours),
-    frameDensity: input.frameDensity ?? 'normal'
+    frameDensity: input.frameDensity === 'ultra' ? 'dense' : (input.frameDensity ?? 'normal')
   });
 
   const response = await fetch(`${apiBaseUrl}/radar/frames?${query.toString()}`);

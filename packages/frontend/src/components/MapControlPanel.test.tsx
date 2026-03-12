@@ -41,7 +41,7 @@ describe('MapControlPanel', () => {
     fireEvent.change(screen.getByLabelText('Select weather metric'), { target: { value: 'humidityPct' } });
     fireEvent.change(screen.getByLabelText('Filter by provider'), { target: { value: 'nws' } });
     fireEvent.change(screen.getByLabelText('Select radar time range'), { target: { value: '6' } });
-    fireEvent.change(screen.getByLabelText('Select radar frame density'), { target: { value: 'dense' } });
+    fireEvent.change(screen.getByLabelText('Select radar frame density'), { target: { value: 'ultra' } });
     fireEvent.change(screen.getByLabelText('Select radar playback speed'), { target: { value: '350' } });
     fireEvent.change(screen.getByLabelText('Adjust radar opacity'), { target: { value: '70' } });
     fireEvent.click(screen.getByRole('button', { name: 'Toggle radar playback' }));
@@ -50,7 +50,7 @@ describe('MapControlPanel', () => {
     expect(onMetricChange).toHaveBeenCalledWith('humidityPct');
     expect(onProviderChange).toHaveBeenCalledWith('nws');
     expect(onRadarHoursChange).toHaveBeenCalledWith(6);
-    expect(onRadarFrameDensityChange).toHaveBeenCalledWith('dense');
+    expect(onRadarFrameDensityChange).toHaveBeenCalledWith('ultra');
     expect(onRadarSpeedChange).toHaveBeenCalledWith(350);
     expect(onRadarOpacityChange).toHaveBeenCalledWith(0.7);
     expect(onToggleRadarPlaying).toHaveBeenCalledTimes(1);

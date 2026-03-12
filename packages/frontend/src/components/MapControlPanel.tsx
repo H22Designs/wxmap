@@ -112,6 +112,7 @@ export function MapControlPanel({
         >
           <option value="normal">Normal</option>
           <option value="dense">Smooth (more frames)</option>
+          <option value="ultra">Ultra smooth (interpolated)</option>
         </select>
       </label>
       <label style={{ display: 'grid', gap: 4 }}>

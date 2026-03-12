@@ -719,6 +719,7 @@ export function App(): JSX.Element {
           currentByStationId={currentByStationId}
           selectedMetric={selectedMetric}
           radarFrames={radarFrames}
+          radarFrameDensity={radarFrameDensity}
           radarOpacity={radarOpacity}
           radarSpeedMs={radarSpeedMs}
           radarPlaying={radarPlaying}

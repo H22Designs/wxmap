@@ -5,7 +5,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
-import type { CurrentObservation, RadarFrame, Station } from '../services/api';
+import type { CurrentObservation, RadarFrame, RadarFrameDensity, Station } from '../services/api';
 import { mapContainerStyle } from '../styles/ui';
 
 L.Icon.Default.mergeOptions({
@@ -19,6 +19,7 @@ type StationMapProps = {
   currentByStationId: Record<string, CurrentObservation | undefined>;
   selectedMetric: MetricKey;
   radarFrames: RadarFrame[];
+  radarFrameDensity: RadarFrameDensity;
   radarOpacity: number;
   radarSpeedMs: number;
   radarPlaying: boolean;
@@ -128,6 +129,7 @@ export function StationMap({
   currentByStationId,
   selectedMetric,
   radarFrames,
+  radarFrameDensity,
   radarOpacity,
   radarSpeedMs,
   radarPlaying,
@@ -135,27 +137,52 @@ export function StationMap({
   selectedStationId,
   onStationSelect
 }: StationMapProps): JSX.Element {
-  const [frameIndex, setFrameIndex] = useState(0);
+  const [frameCursor, setFrameCursor] = useState(0);
   const center = getCenter(stations);
-  const activeFrame = radarFrames.length > 0 ? radarFrames[frameIndex % radarFrames.length] : null;
+  const hasFrames = radarFrames.length > 0;
+  const frameCount = radarFrames.length;
+  const safeCursor = hasFrames ? ((frameCursor % frameCount) + frameCount) % frameCount : 0;
+  const baseFrameIndex = hasFrames ? Math.floor(safeCursor) % frameCount : -1;
+  const nextFrameIndex = hasFrames ? (baseFrameIndex + 1) % frameCount : -1;
+  const blendWeight =
+    radarFrameDensity === 'ultra' && radarPlaying && frameCount > 1 ? safeCursor - Math.floor(safeCursor) : 0;
 
   useEffect(() => {
     if (!radarPlaying || radarFrames.length <= 1) {
       return;
     }
 
+    if (radarFrameDensity === 'ultra') {
+      let rafId = 0;
+      let previousTime = performance.now();
+
+      const animate = (time: number): void => {
+        const deltaMs = time - previousTime;
+        previousTime = time;
+
+        setFrameCursor((previous) => (previous + deltaMs / radarSpeedMs) % radarFrames.length);
+        rafId = window.requestAnimationFrame(animate);
+      };
+
+      rafId = window.requestAnimationFrame(animate);
+
+      return () => {
+        window.cancelAnimationFrame(rafId);
+      };
+    }
+
     const timer = window.setInterval(() => {
-      setFrameIndex((previous) => (previous + 1) % radarFrames.length);
+      setFrameCursor((previous) => (Math.floor(previous) + 1) % radarFrames.length);
     }, radarSpeedMs);
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [radarFrames.length, radarPlaying, radarSpeedMs]);
+  }, [radarFrames.length, radarFrameDensity, radarPlaying, radarSpeedMs]);
 
   useEffect(() => {
-    setFrameIndex(0);
-  }, [radarFrames]);
+    setFrameCursor(0);
+  }, [radarFrames, radarFrameDensity]);
 
   return (
     <div aria-label="Station map" style={mapContainerStyle}>
@@ -172,15 +199,26 @@ export function StationMap({
               : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
           }
         />
-        {radarFrames.map((frame) => {
-          const isActive = activeFrame?.id === frame.id;
+        {radarFrames.map((frame, frameIndex) => {
+          const isBase = frameIndex === baseFrameIndex;
+          const isNext = frameIndex === nextFrameIndex;
+          const opacity =
+            radarFrameDensity === 'ultra' && frameCount > 1
+              ? isBase
+                ? radarOpacity * (1 - blendWeight)
+                : isNext
+                  ? radarOpacity * blendWeight
+                  : 0
+              : isBase
+                ? radarOpacity
+                : 0;
 
           return (
             <TileLayer
               key={frame.id}
               attribution="Radar © RainViewer"
               url={frame.tileUrl}
-              opacity={isActive ? radarOpacity : 0}
+              opacity={opacity}
               className="wx-radar-layer"
             />
           );

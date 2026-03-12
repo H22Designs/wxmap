@@ -50,7 +50,12 @@ function parseFrameDensity(input: unknown): 'normal' | 'dense' {
     return 'normal';
   }
 
-  return input.trim().toLowerCase() === 'dense' ? 'dense' : 'normal';
+  const normalized = input.trim().toLowerCase();
+  if (normalized === 'dense' || normalized === 'ultra') {
+    return 'dense';
+  }
+
+  return 'normal';
 }
 
 function buildTileUrl(host: string, path: string): string {
