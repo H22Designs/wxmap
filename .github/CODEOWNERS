@@ -1,0 +1,7 @@
+# Default code owners for the repository
+* @H22Designs
+
+# Optional granular ownership examples (uncomment and adjust as team grows)
+# /packages/backend/ @H22Designs
+# /packages/frontend/ @H22Designs
+# /.github/ @H22Designs
