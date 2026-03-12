@@ -651,45 +651,96 @@ export function App(): JSX.Element {
         fontFamily: 'system-ui, sans-serif',
         padding: 24,
         minHeight: '100vh',
-        backgroundColor: darkMode ? '#0f172a' : '#f8fafc',
+        background: darkMode
+          ? 'radial-gradient(circle at top, #1e293b 0%, #0f172a 55%, #020617 100%)'
+          : 'radial-gradient(circle at top, #f8fbff 0%, #eef2ff 45%, #e2e8f0 100%)',
         color: darkMode ? '#e2e8f0' : '#0f172a',
         ['--wx-border' as string]: darkMode ? '#334155' : '#d1d5db',
         ['--wx-surface' as string]: darkMode ? '#111827' : '#ffffff',
+        ['--wx-surface-strong' as string]: darkMode ? '#0b1220' : '#f8fafc',
         ['--wx-skeleton-start' as string]: darkMode ? '#1f2937' : '#f3f4f6',
-        ['--wx-skeleton-mid' as string]: darkMode ? '#334155' : '#e5e7eb'
+        ['--wx-skeleton-mid' as string]: darkMode ? '#334155' : '#e5e7eb',
+        ['--wx-text' as string]: darkMode ? '#e2e8f0' : '#111827',
+        ['--wx-muted' as string]: darkMode ? '#94a3b8' : '#475569',
+        ['--wx-accent' as string]: darkMode ? '#93c5fd' : '#2563eb'
       }}
       aria-busy={stationsStatus === 'loading...' || isAuthSubmitting || isAdminLoading}
     >
       <style>{`
         @keyframes wxmapPulse {0% {background-position: 100% 50%;} 100% {background-position: 0 50%;}}
+        main {
+          line-height: 1.45;
+        }
+        h1, h2, h3 {
+          letter-spacing: -0.01em;
+        }
         select, input, button {
           background: ${darkMode ? '#1f2937' : '#ffffff'};
           color: ${darkMode ? '#e2e8f0' : '#111827'};
           border: 1px solid ${darkMode ? '#334155' : '#cbd5e1'};
-          border-radius: 8px;
+          border-radius: 10px;
+          padding: 8px 10px;
+          transition: all 140ms ease;
+        }
+        select:focus, input:focus, button:focus {
+          outline: 2px solid ${darkMode ? '#60a5fa' : '#3b82f6'};
+          outline-offset: 1px;
+        }
+        button {
+          cursor: pointer;
+          font-weight: 600;
+        }
+        button:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
         }
         .wx-radar-layer {
           transition: opacity 240ms linear;
           will-change: opacity;
         }
+        .wx-shell {
+          width: min(1280px, 100%);
+          margin: 0 auto;
+        }
+        .wx-header-title {
+          font-size: clamp(1.8rem, 2.7vw, 2.6rem);
+          margin: 0;
+          font-weight: 800;
+          background: ${darkMode
+            ? 'linear-gradient(120deg, #bfdbfe 0%, #7dd3fc 45%, #67e8f9 100%)'
+            : 'linear-gradient(120deg, #1d4ed8 0%, #0891b2 45%, #0ea5e9 100%)'};
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          color: transparent;
+        }
+        .wx-subtitle {
+          margin-top: 6px;
+          margin-bottom: 10px;
+          color: var(--wx-muted, #475569);
+          font-size: 0.97rem;
+        }
       `}</style>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 8
-        }}
-      >
-        <h1 style={{ margin: 0 }}>wxmap</h1>
-        <SessionBadge session={session} />
-      </div>
-      <p>Frontend shell is ready. Next up: map, layers, providers, and live weather data.</p>
-      <p>
-        Backend status: <strong>{health}</strong>
-      </p>
-      <section style={sectionGridStyle} aria-labelledby="station-map-heading">
+      <div className="wx-shell">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            marginBottom: 8
+          }}
+        >
+          <h1 className="wx-header-title">wxmap</h1>
+          <SessionBadge session={session} />
+        </div>
+        <p className="wx-subtitle">
+          Explore real-time weather with animated radar, provider controls, and customizable map views.
+        </p>
+        <p style={{ marginTop: 0, color: 'var(--wx-muted, #475569)' }}>
+          Backend status: <strong style={{ color: 'var(--wx-accent, #2563eb)' }}>{health}</strong>
+        </p>
+        <section style={sectionGridStyle} aria-labelledby="station-map-heading">
         <h2 id="station-map-heading" style={{ marginBottom: 0 }}>
           Station map
         </h2>
@@ -752,8 +803,8 @@ export function App(): JSX.Element {
             metric={selectedMetric}
           />
         ) : null}
-      </section>
-      <section style={twoColumnGridStyle} aria-label="Stations and authentication panels">
+        </section>
+        <section style={twoColumnGridStyle} aria-label="Stations and authentication panels">
         <div aria-labelledby="stations-list-heading">
           <h2 id="stations-list-heading">Stations</h2>
           {stationsStatus === 'loading...' ? (
@@ -879,8 +930,9 @@ export function App(): JSX.Element {
             }
           />
         </div>
-      </section>
-      {toast ? <ToastBanner toast={toast} onClose={() => setToast(null)} /> : null}
+        </section>
+        {toast ? <ToastBanner toast={toast} onClose={() => setToast(null)} /> : null}
+      </div>
     </main>
   );
 }
