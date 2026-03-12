@@ -6,9 +6,29 @@ import {
 } from './providerActivityStorage';
 
 const userId = 'user-1';
+const storage = new Map<string, string>();
+
+const localStorageMock = {
+  getItem: (key: string): string | null => (storage.has(key) ? storage.get(key) ?? null : null),
+  setItem: (key: string, value: string): void => {
+    storage.set(key, value);
+  },
+  removeItem: (key: string): void => {
+    storage.delete(key);
+  },
+  clear: (): void => {
+    storage.clear();
+  }
+};
 
 describe('providerActivityStorage', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'localStorage', {
+      value: localStorageMock,
+      configurable: true,
+      writable: true
+    });
+
     window.localStorage.clear();
   });
 
