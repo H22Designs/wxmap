@@ -56,7 +56,8 @@ export function seedDatabase(db: Database.Database): void {
   const initialSettings: Array<[string, string]> = [
     ['collector.interval.pws.minutes', '5'],
     ['collector.interval.nws.minutes', '10'],
-    ['provider.wunderground.enabled', 'false']
+    ['provider.wunderground.enabled', 'false'],
+    ['provider.ambient.enabled', 'false']
   ];
 
   for (const [key, value] of initialSettings) {
@@ -93,6 +94,17 @@ export function seedDatabase(db: Database.Database): void {
     1
   );
 
+  insertStation.run(
+    'station-ambient-kalmillambient1',
+    'ambient',
+    'kalmillambient1',
+    'KALMILLAMBIENT1 (Built-in)',
+    45.6561,
+    -68.7072,
+    105,
+    1
+  );
+
   const now = Date.now();
 
   insertObservation.run(
@@ -119,6 +131,19 @@ export function seedDatabase(db: Database.Database): void {
     152,
     0,
     JSON.stringify({ source: 'seed', station: 'kalmillp8' })
+  );
+
+  insertObservation.run(
+    'obs-station-ambient-kalmillambient1-latest',
+    'station-ambient-kalmillambient1',
+    new Date(now - 2 * 60_000).toISOString(),
+    7.9,
+    80,
+    1015.0,
+    2.9,
+    148,
+    0,
+    JSON.stringify({ source: 'seed', station: 'kalmillambient1' })
   );
 
   bootstrapDevAdmin(db);

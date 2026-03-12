@@ -53,15 +53,38 @@ function createInMemoryRepositories(): {
   userRepository: UserRepositoryLike;
 } {
   const nowIso = new Date().toISOString();
+  const now = Date.now();
   const stations: Station[] = [
     {
-      id: 'station-nws-sample-1',
-      provider: 'nws',
-      externalId: 'KSEA',
-      name: 'Seattle-Tacoma Intl (Sample)',
-      lat: 47.4489,
-      lng: -122.3094,
-      elevationM: 132,
+      id: 'station-wu-kalmillp10',
+      provider: 'wunderground',
+      externalId: 'kalmillp10',
+      name: 'KALMILLP10 (Built-in)',
+      lat: 45.6573,
+      lng: -68.7098,
+      elevationM: 104,
+      active: true,
+      createdAt: nowIso
+    },
+    {
+      id: 'station-wu-kalmillp8',
+      provider: 'wunderground',
+      externalId: 'kalmillp8',
+      name: 'KALMILLP8 (Built-in)',
+      lat: 45.655,
+      lng: -68.706,
+      elevationM: 106,
+      active: true,
+      createdAt: nowIso
+    },
+    {
+      id: 'station-ambient-kalmillambient1',
+      provider: 'ambient',
+      externalId: 'kalmillambient1',
+      name: 'KALMILLAMBIENT1 (Built-in)',
+      lat: 45.6561,
+      lng: -68.7072,
+      elevationM: 105,
       active: true,
       createdAt: nowIso
     }
@@ -69,16 +92,40 @@ function createInMemoryRepositories(): {
 
   const observations: Observation[] = [
     {
-      id: 'obs-station-nws-sample-1-latest',
-      stationId: 'station-nws-sample-1',
-      observedAt: nowIso,
-      tempC: 10.3,
-      humidityPct: 78,
-      pressureHpa: 1012.5,
-      windSpeedMs: 4.3,
-      windDirDeg: 210,
+      id: 'obs-station-wu-kalmillp10-latest',
+      stationId: 'station-wu-kalmillp10',
+      observedAt: new Date(now).toISOString(),
+      tempC: 7.8,
+      humidityPct: 81,
+      pressureHpa: 1015.1,
+      windSpeedMs: 2.7,
+      windDirDeg: 144,
       precipMm: 0,
-      rawJson: JSON.stringify({ source: 'memory-seed' })
+      rawJson: JSON.stringify({ source: 'memory-seed', station: 'kalmillp10' })
+    },
+    {
+      id: 'obs-station-wu-kalmillp8-latest',
+      stationId: 'station-wu-kalmillp8',
+      observedAt: new Date(now - 3 * 60_000).toISOString(),
+      tempC: 8.2,
+      humidityPct: 79,
+      pressureHpa: 1014.8,
+      windSpeedMs: 3.1,
+      windDirDeg: 152,
+      precipMm: 0,
+      rawJson: JSON.stringify({ source: 'memory-seed', station: 'kalmillp8' })
+    },
+    {
+      id: 'obs-station-ambient-kalmillambient1-latest',
+      stationId: 'station-ambient-kalmillambient1',
+      observedAt: new Date(now - 2 * 60_000).toISOString(),
+      tempC: 7.9,
+      humidityPct: 80,
+      pressureHpa: 1015.0,
+      windSpeedMs: 2.9,
+      windDirDeg: 148,
+      precipMm: 0,
+      rawJson: JSON.stringify({ source: 'memory-seed', station: 'kalmillambient1' })
     }
   ];
 
@@ -96,6 +143,22 @@ function createInMemoryRepositories(): {
       {
         key: 'collector.interval.nws.minutes',
         value: '10',
+        updatedAt: nowIso
+      }
+    ],
+    [
+      'provider.wunderground.enabled',
+      {
+        key: 'provider.wunderground.enabled',
+        value: 'false',
+        updatedAt: nowIso
+      }
+    ],
+    [
+      'provider.ambient.enabled',
+      {
+        key: 'provider.ambient.enabled',
+        value: 'false',
         updatedAt: nowIso
       }
     ]
