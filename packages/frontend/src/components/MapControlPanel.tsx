@@ -5,6 +5,7 @@ import { controlGridStyle } from '../styles/ui';
 type MapControlPanelProps = {
   selectedMetric: MetricKey;
   selectedProvider: string;
+  mapViewMode: '2d' | '3d';
   providerOptions: string[];
   radarHours: 1 | 3 | 6 | 12;
   radarFrameDensity: RadarFrameDensity;
@@ -17,6 +18,7 @@ type MapControlPanelProps = {
   totalCount: number;
   onMetricChange: (metric: MetricKey) => void;
   onProviderChange: (provider: string) => void;
+  onMapViewModeChange: (mode: '2d' | '3d') => void;
   onRadarHoursChange: (hours: 1 | 3 | 6 | 12) => void;
   onRadarFrameDensityChange: (density: RadarFrameDensity) => void;
   onRadarSpeedChange: (speedMs: number) => void;
@@ -28,6 +30,7 @@ type MapControlPanelProps = {
 export function MapControlPanel({
   selectedMetric,
   selectedProvider,
+  mapViewMode,
   providerOptions,
   radarHours,
   radarFrameDensity,
@@ -40,6 +43,7 @@ export function MapControlPanel({
   totalCount,
   onMetricChange,
   onProviderChange,
+  onMapViewModeChange,
   onRadarHoursChange,
   onRadarFrameDensityChange,
   onRadarSpeedChange,
@@ -73,6 +77,17 @@ export function MapControlPanel({
               {provider === 'all' ? 'All providers' : provider}
             </option>
           ))}
+        </select>
+      </label>
+      <label style={{ display: 'grid', gap: 4 }}>
+        Map view
+        <select
+          aria-label="Select map view mode"
+          value={mapViewMode}
+          onChange={(event) => onMapViewModeChange(event.target.value as '2d' | '3d')}
+        >
+          <option value="2d">2D flat</option>
+          <option value="3d">3D globe-style</option>
         </select>
       </label>
       <div>

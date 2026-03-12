@@ -18,6 +18,7 @@ type StationMapProps = {
   stations: Station[];
   currentByStationId: Record<string, CurrentObservation | undefined>;
   selectedMetric: MetricKey;
+  mapViewMode: '2d' | '3d';
   radarFrames: RadarFrame[];
   radarFrameDensity: RadarFrameDensity;
   radarOpacity: number;
@@ -128,6 +129,7 @@ export function StationMap({
   stations,
   currentByStationId,
   selectedMetric,
+  mapViewMode,
   radarFrames,
   radarFrameDensity,
   radarOpacity,
@@ -184,8 +186,36 @@ export function StationMap({
     setFrameCursor(0);
   }, [radarFrames, radarFrameDensity]);
 
+  const isGlobeMode = mapViewMode === '3d';
+  const containerStyle = {
+    ...mapContainerStyle,
+    position: 'relative' as const,
+    maxWidth: isGlobeMode ? 760 : 'none',
+    margin: isGlobeMode ? '0 auto' : undefined,
+    borderRadius: isGlobeMode ? '50% / 44%' : mapContainerStyle.borderRadius,
+    boxShadow: isGlobeMode
+      ? '0 24px 46px rgba(15, 23, 42, 0.42), inset 0 0 0 1px rgba(148, 163, 184, 0.45)'
+      : undefined,
+    transform: isGlobeMode ? 'perspective(1000px) rotateX(25deg) scale(1.03)' : undefined,
+    transformOrigin: isGlobeMode ? 'center center' : undefined
+  };
+
   return (
-    <div aria-label="Station map" style={mapContainerStyle}>
+    <div aria-label="Station map" style={containerStyle}>
+      {isGlobeMode ? (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            borderRadius: '50% / 44%',
+            background:
+              'radial-gradient(circle at 30% 20%, rgba(255,255,255,0.26), rgba(255,255,255,0.05) 34%, rgba(0,0,0,0.2) 72%, rgba(0,0,0,0.38) 100%)',
+            zIndex: 500
+          }}
+        />
+      ) : null}
       <MapContainer center={center} zoom={5} style={{ height: '100%', width: '100%' }}>
         <TileLayer
           attribution={

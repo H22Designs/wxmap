@@ -6,6 +6,7 @@ describe('MapControlPanel', () => {
   it('calls handlers when controls are changed', () => {
     const onMetricChange = vi.fn();
     const onProviderChange = vi.fn();
+    const onMapViewModeChange = vi.fn();
     const onRadarHoursChange = vi.fn();
     const onRadarFrameDensityChange = vi.fn();
     const onRadarSpeedChange = vi.fn();
@@ -17,6 +18,7 @@ describe('MapControlPanel', () => {
       <MapControlPanel
         selectedMetric="tempC"
         selectedProvider="all"
+        mapViewMode="2d"
         providerOptions={['all', 'nws']}
         radarHours={3}
         radarFrameDensity="normal"
@@ -29,6 +31,7 @@ describe('MapControlPanel', () => {
         totalCount={4}
         onMetricChange={onMetricChange}
         onProviderChange={onProviderChange}
+        onMapViewModeChange={onMapViewModeChange}
         onRadarHoursChange={onRadarHoursChange}
         onRadarFrameDensityChange={onRadarFrameDensityChange}
         onRadarSpeedChange={onRadarSpeedChange}
@@ -40,6 +43,7 @@ describe('MapControlPanel', () => {
 
     fireEvent.change(screen.getByLabelText('Select weather metric'), { target: { value: 'humidityPct' } });
     fireEvent.change(screen.getByLabelText('Filter by provider'), { target: { value: 'nws' } });
+    fireEvent.change(screen.getByLabelText('Select map view mode'), { target: { value: '3d' } });
     fireEvent.change(screen.getByLabelText('Select radar time range'), { target: { value: '6' } });
     fireEvent.change(screen.getByLabelText('Select radar frame density'), { target: { value: 'ultra' } });
     fireEvent.change(screen.getByLabelText('Select radar playback speed'), { target: { value: '350' } });
@@ -49,6 +53,7 @@ describe('MapControlPanel', () => {
 
     expect(onMetricChange).toHaveBeenCalledWith('humidityPct');
     expect(onProviderChange).toHaveBeenCalledWith('nws');
+    expect(onMapViewModeChange).toHaveBeenCalledWith('3d');
     expect(onRadarHoursChange).toHaveBeenCalledWith(6);
     expect(onRadarFrameDensityChange).toHaveBeenCalledWith('ultra');
     expect(onRadarSpeedChange).toHaveBeenCalledWith(350);

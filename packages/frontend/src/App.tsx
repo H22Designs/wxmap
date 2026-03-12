@@ -42,6 +42,7 @@ import {
 
 const SESSION_STORAGE_KEY = 'wxmap.session.v1';
 const THEME_STORAGE_KEY = 'wxmap.theme.v1';
+const MAP_VIEW_MODE_STORAGE_KEY = 'wxmap.mapViewMode.v1';
 const MAX_PROVIDER_ACTIVITY = 25;
 
 export function App(): JSX.Element {
@@ -74,6 +75,7 @@ export function App(): JSX.Element {
   const [savingProviderConfig, setSavingProviderConfig] = useState<string | null>(null);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('tempC');
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
+  const [mapViewMode, setMapViewMode] = useState<'2d' | '3d'>('2d');
   const [radarFrames, setRadarFrames] = useState<RadarFrame[]>([]);
   const [radarHours, setRadarHours] = useState<1 | 3 | 6 | 12>(3);
   const [radarFrameDensity, setRadarFrameDensity] = useState<RadarFrameDensity>('normal');
@@ -218,11 +220,20 @@ export function App(): JSX.Element {
     if (savedTheme === 'dark') {
       setDarkMode(true);
     }
+
+    const savedMapViewMode = window.localStorage.getItem(MAP_VIEW_MODE_STORAGE_KEY);
+    if (savedMapViewMode === '2d' || savedMapViewMode === '3d') {
+      setMapViewMode(savedMapViewMode);
+    }
   }, []);
 
   useEffect(() => {
     window.localStorage.setItem(THEME_STORAGE_KEY, darkMode ? 'dark' : 'light');
   }, [darkMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem(MAP_VIEW_MODE_STORAGE_KEY, mapViewMode);
+  }, [mapViewMode]);
 
   useEffect(() => {
     if (!session) {
@@ -688,6 +699,7 @@ export function App(): JSX.Element {
         <MapControlPanel
           selectedMetric={selectedMetric}
           selectedProvider={selectedProvider}
+          mapViewMode={mapViewMode}
           providerOptions={providerOptions}
           radarHours={radarHours}
           radarFrameDensity={radarFrameDensity}
@@ -700,6 +712,7 @@ export function App(): JSX.Element {
           totalCount={stations.length}
           onMetricChange={setSelectedMetric}
           onProviderChange={setSelectedProvider}
+          onMapViewModeChange={setMapViewMode}
           onRadarHoursChange={setRadarHours}
           onRadarFrameDensityChange={setRadarFrameDensity}
           onRadarSpeedChange={setRadarSpeedMs}
@@ -718,6 +731,7 @@ export function App(): JSX.Element {
           stations={filteredStations}
           currentByStationId={currentByStationId}
           selectedMetric={selectedMetric}
+          mapViewMode={mapViewMode}
           radarFrames={radarFrames}
           radarFrameDensity={radarFrameDensity}
           radarOpacity={radarOpacity}
