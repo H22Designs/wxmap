@@ -191,21 +191,17 @@ export function StationMap({
   const containerStyle: CSSProperties = {
     ...mapContainerStyle,
     position: 'relative',
-    maxWidth: isGlobeMode ? 760 : 'none',
-    margin: isGlobeMode ? '0 auto' : undefined,
-    borderRadius: isGlobeMode ? '50% / 44%' : mapContainerStyle.borderRadius,
-    clipPath: isGlobeMode ? 'ellipse(50% 44% at 50% 50%)' : undefined,
-    WebkitClipPath: isGlobeMode ? 'ellipse(50% 44% at 50% 50%)' : undefined,
+    width: isGlobeMode ? 'min(100%, 560px)' : undefined,
+    height: isGlobeMode ? 560 : mapContainerStyle.height,
+    margin: isGlobeMode ? '8px auto 0' : undefined,
+    borderRadius: isGlobeMode ? '50%' : mapContainerStyle.borderRadius,
     boxShadow: isGlobeMode
       ? '0 24px 46px rgba(15, 23, 42, 0.42), inset 0 0 0 1px rgba(148, 163, 184, 0.45)'
       : undefined,
-    transform: isGlobeMode ? 'perspective(1000px) rotateX(25deg) scale(1.03)' : undefined,
-    WebkitTransform: isGlobeMode ? 'perspective(1000px) rotateX(25deg) scale(1.03)' : undefined,
-    transformStyle: isGlobeMode ? 'preserve-3d' : undefined,
-    WebkitTransformStyle: isGlobeMode ? 'preserve-3d' : undefined,
-    backfaceVisibility: isGlobeMode ? 'hidden' : undefined,
-    WebkitBackfaceVisibility: isGlobeMode ? 'hidden' : undefined,
-    transformOrigin: isGlobeMode ? 'center center' : undefined
+    transform: isGlobeMode ? 'perspective(1200px) rotateX(18deg) scale(1.02)' : undefined,
+    WebkitTransform: isGlobeMode ? 'perspective(1200px) rotateX(18deg) scale(1.02)' : undefined,
+    transformOrigin: isGlobeMode ? 'center center' : undefined,
+    background: isGlobeMode ? (darkMode ? '#020617' : '#dbeafe') : undefined
   };
 
   return (
@@ -217,7 +213,7 @@ export function StationMap({
             position: 'absolute',
             inset: 0,
             pointerEvents: 'none',
-            borderRadius: '50% / 44%',
+            borderRadius: '50%',
             background:
               'radial-gradient(circle at 30% 20%, rgba(255,255,255,0.26), rgba(255,255,255,0.05) 34%, rgba(0,0,0,0.2) 72%, rgba(0,0,0,0.38) 100%)',
             zIndex: 500
@@ -230,8 +226,8 @@ export function StationMap({
         style={{
           height: '100%',
           width: '100%',
-          transform: isGlobeMode ? 'translateZ(0) scale(1.02)' : undefined,
-          WebkitTransform: isGlobeMode ? 'translateZ(0) scale(1.02)' : undefined,
+          transform: isGlobeMode ? 'translateZ(0) scale(1.04)' : undefined,
+          WebkitTransform: isGlobeMode ? 'translateZ(0) scale(1.04)' : undefined,
           filter: isGlobeMode ? 'saturate(1.08) contrast(1.03)' : undefined
         }}
       >
