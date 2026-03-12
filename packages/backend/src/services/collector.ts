@@ -26,6 +26,10 @@ export class CollectorService {
     this.refreshSchedules();
   }
 
+  listProviders(): string[] {
+    return [...this.providers];
+  }
+
   stop(): void {
     for (const timer of this.timers.values()) {
       clearInterval(timer);
@@ -42,10 +46,14 @@ export class CollectorService {
 
     for (const provider of this.providers) {
       const isPws = PWS_PROVIDERS.has(provider);
-      const intervalKey = isPws
+      const defaultIntervalKey = isPws
         ? 'collector.interval.pws.minutes'
         : 'collector.interval.nws.minutes';
-      const intervalMinutes = this.parsePositiveInt(settingsMap.get(intervalKey), isPws ? 5 : 10);
+      const providerIntervalKey = `provider.${provider}.interval.minutes`;
+      const intervalMinutes = this.parsePositiveInt(
+        settingsMap.get(providerIntervalKey) ?? settingsMap.get(defaultIntervalKey),
+        isPws ? 5 : 10
+      );
       const enabledDefault = provider === 'nws';
       const enabled = this.parseBoolean(settingsMap.get(`provider.${provider}.enabled`), enabledDefault);
 
@@ -74,7 +82,17 @@ export class CollectorService {
     }
   }
 
-  private async runProviderCycle(provider: string, intervalMinutes: number): Promise<void> {
+  async runNow(provider: string): Promise<ProviderStatus | null> {
+    if (!this.providers.includes(provider)) {
+      return null;
+    }
+
+    const status = this.deps.providerStatusStore.list().find((item) => item.provider === provider);
+    const intervalMinutes = status?.intervalMinutes ?? 5;
+    return this.runProviderCycle(provider, intervalMinutes);
+  }
+
+  private async runProviderCycle(provider: string, intervalMinutes: number): Promise<ProviderStatus | null> {
     this.deps.providerStatusStore.markStarted(provider);
 
     try {
@@ -92,6 +110,8 @@ export class CollectorService {
       if (status) {
         this.deps.onProviderCycleCompleted?.(status);
       }
+
+      return status;
     } catch (error) {
       const now = new Date();
       const nextSyncAt = new Date(now.getTime() + intervalMinutes * 60_000).toISOString();
@@ -106,6 +126,8 @@ export class CollectorService {
       if (status) {
         this.deps.onProviderCycleCompleted?.(status);
       }
+
+      return status;
     }
   }
 

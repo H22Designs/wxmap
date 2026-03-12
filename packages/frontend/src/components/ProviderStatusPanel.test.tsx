@@ -5,11 +5,18 @@ import { ProviderStatusPanel } from './ProviderStatusPanel';
 describe('ProviderStatusPanel', () => {
   it('renders provider rows and triggers reload', () => {
     const onReload = vi.fn();
+    const onTriggerSync = vi.fn();
+    const onSaveProviderConfig = vi.fn();
 
     render(
       <ProviderStatusPanel
         status="loaded (2)"
         isLoading={false}
+        realtimeState="connected"
+        syncingProvider={null}
+        savingProviderConfig={null}
+        onTriggerSync={onTriggerSync}
+        onSaveProviderConfig={onSaveProviderConfig}
         onReload={onReload}
         providers={[
           {
@@ -35,10 +42,21 @@ describe('ProviderStatusPanel', () => {
     );
 
     expect(screen.getByText('loaded (2)')).toBeInTheDocument();
+  expect(screen.getByText('Live connected')).toBeInTheDocument();
     expect(screen.getByText('nws')).toBeInTheDocument();
     expect(screen.getByText('madis')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Reload provider statuses' }));
     expect(onReload).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save config for nws' }));
+    expect(onSaveProviderConfig).toHaveBeenCalledWith({
+      provider: 'nws',
+      enabled: true,
+      intervalMinutes: 10
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger sync for nws' }));
+    expect(onTriggerSync).toHaveBeenCalledWith('nws');
   });
 });

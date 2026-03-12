@@ -45,7 +45,7 @@ app.use(express.json());
 app.use('/api/v1/weather', weatherRouter({ stationRepository, observationRepository }));
 app.use('/api/v1/radar', radarRouter);
 app.use('/api/v1/auth', authRouter({ userRepository }));
-app.use('/api/v1/admin', adminRouter({ settingsRepository, providerStatusStore }));
+app.use('/api/v1/admin', adminRouter({ settingsRepository, providerStatusStore, collectorService }));
 
 app.get('/api/v1/health', (_req, res) => {
   res.status(200).json({

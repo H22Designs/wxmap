@@ -294,3 +294,61 @@ export async function fetchAdminProviders(accessToken: string): Promise<AdminPro
   const payload = (await response.json()) as AdminProvidersResponse;
   return payload.items;
 }
+
+export async function triggerAdminProviderSync(input: {
+  accessToken: string;
+  provider: string;
+}): Promise<AdminProviderStatus> {
+  const response = await fetch(`${apiBaseUrl}/admin/providers/${encodeURIComponent(input.provider)}/sync`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new HttpStatusError(
+      errorText || `Trigger provider sync request failed with status ${response.status}`,
+      response.status
+    );
+  }
+
+  return (await response.json()) as AdminProviderStatus;
+}
+
+export async function updateAdminProviderConfig(input: {
+  accessToken: string;
+  provider: string;
+  enabled?: boolean;
+  intervalMinutes?: number;
+}): Promise<AdminProviderStatus> {
+  const body: Record<string, boolean | number> = {};
+
+  if (typeof input.enabled === 'boolean') {
+    body.enabled = input.enabled;
+  }
+
+  if (typeof input.intervalMinutes === 'number') {
+    body.intervalMinutes = input.intervalMinutes;
+  }
+
+  const response = await fetch(`${apiBaseUrl}/admin/providers/${encodeURIComponent(input.provider)}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new HttpStatusError(
+      errorText || `Update provider config request failed with status ${response.status}`,
+      response.status
+    );
+  }
+
+  return (await response.json()) as AdminProviderStatus;
+}

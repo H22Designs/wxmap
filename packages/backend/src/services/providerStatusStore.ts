@@ -35,10 +35,14 @@ export class ProviderStatusStore {
       return;
     }
 
+    const isEnabled = config.enabled;
+
     this.statusByProvider.set(provider, {
       ...existing,
-      enabled: config.enabled,
-      intervalMinutes: Math.max(1, Math.floor(config.intervalMinutes))
+      enabled: isEnabled,
+      intervalMinutes: Math.max(1, Math.floor(config.intervalMinutes)),
+      state: isEnabled ? existing.state : 'idle',
+      nextSyncAt: isEnabled ? existing.nextSyncAt : null
     });
   }
 

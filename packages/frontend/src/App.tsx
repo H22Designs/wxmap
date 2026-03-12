@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   fetchAdminProviders,
+  triggerAdminProviderSync,
+  updateAdminProviderConfig,
   updateAdminSetting,
   fetchCurrentObservations,
   fetchAdminSettings,
@@ -23,14 +25,22 @@ import { AdminSettingsPanel } from './components/AdminSettingsPanel';
 import { AuthPanel } from './components/AuthPanel';
 import { LoadingSkeleton } from './components/LoadingSkeleton';
 import { MapControlPanel } from './components/MapControlPanel';
+import { ProviderActivityLogPanel, type ProviderActivityEntry } from './components/ProviderActivityLogPanel';
 import { ProviderStatusPanel } from './components/ProviderStatusPanel';
 import { SessionBadge } from './components/SessionBadge';
 import { StationHistoryChart } from './components/StationHistoryChart';
 import { StationMap, type MetricKey } from './components/StationMap';
 import { ToastBanner, type Toast } from './components/ToastBanner';
 import { sectionGridStyle, twoColumnGridStyle } from './styles/ui';
+import { connectProviderStatusStream } from './services/realtime';
+import {
+  clearProviderActivity,
+  loadProviderActivity,
+  saveProviderActivity
+} from './services/providerActivityStorage';
 
 const SESSION_STORAGE_KEY = 'wxmap.session.v1';
+const MAX_PROVIDER_ACTIVITY = 25;
 
 export function App(): JSX.Element {
   const [health, setHealth] = useState<string>('checking...');
@@ -51,8 +61,15 @@ export function App(): JSX.Element {
   const [adminSettingsStatus, setAdminSettingsStatus] = useState('not-loaded');
   const [savingSettingKey, setSavingSettingKey] = useState<string | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<AdminProviderStatus[]>([]);
+  const [providerActivity, setProviderActivity] = useState<ProviderActivityEntry[]>([]);
+  const [isProviderActivityHydrated, setIsProviderActivityHydrated] = useState(false);
   const [providerStatusState, setProviderStatusState] = useState('not-loaded');
+  const [providerStreamState, setProviderStreamState] = useState<
+    'disconnected' | 'connecting' | 'connected' | 'reconnecting'
+  >('disconnected');
   const [isProviderStatusLoading, setIsProviderStatusLoading] = useState(false);
+  const [syncingProvider, setSyncingProvider] = useState<string | null>(null);
+  const [savingProviderConfig, setSavingProviderConfig] = useState<string | null>(null);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('tempC');
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
   const [radarFrames, setRadarFrames] = useState<RadarFrame[]>([]);
@@ -78,6 +95,9 @@ export function App(): JSX.Element {
     setAuthError('Your session expired. Please log in again.');
     setAdminProbe('no-session');
     setProviderStatuses([]);
+    setProviderActivity([]);
+    setProviderStreamState('disconnected');
+    setIsProviderActivityHydrated(false);
     setProviderStatusState('not-loaded');
     showToast('error', 'Session expired. Please log in again.');
   }
@@ -198,11 +218,77 @@ export function App(): JSX.Element {
       setAdminDraftValues({});
       setAdminSettingsStatus('not-loaded');
       setProviderStatuses([]);
+      setProviderActivity([]);
+      setProviderStreamState('disconnected');
+      setIsProviderActivityHydrated(false);
       setProviderStatusState('not-loaded');
       return;
     }
 
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  }, [session]);
+
+  useEffect(() => {
+    if (!session || session.user.role !== 'admin') {
+      return;
+    }
+
+    const restored = loadProviderActivity(session.user.id);
+    setProviderActivity(restored);
+    setIsProviderActivityHydrated(true);
+  }, [session]);
+
+  useEffect(() => {
+    if (!session || session.user.role !== 'admin' || !isProviderActivityHydrated) {
+      return;
+    }
+
+    saveProviderActivity(session.user.id, providerActivity);
+  }, [session, providerActivity, isProviderActivityHydrated]);
+
+  useEffect(() => {
+    if (!session || session.user.role !== 'admin') {
+      return;
+    }
+
+    setProviderStreamState('connecting');
+
+    const disconnect = connectProviderStatusStream({
+      onConnected: () => {
+        setProviderStreamState('connected');
+        setProviderStatusState((previous) =>
+          previous.startsWith('loaded') || previous.startsWith('live') ? 'live updates' : previous
+        );
+      },
+      onProviderSync: (incoming) => {
+        setProviderStatuses((previous) => {
+          const next = [...previous.filter((item) => item.provider !== incoming.provider), incoming];
+          next.sort((a, b) => a.provider.localeCompare(b.provider));
+          return next;
+        });
+        setProviderActivity((previous) => {
+          const entry: ProviderActivityEntry = {
+            provider: incoming.provider,
+            state: incoming.state,
+            at: incoming.lastSyncAt ?? new Date().toISOString(),
+            error: incoming.lastError
+          };
+
+          return [entry, ...previous].slice(0, MAX_PROVIDER_ACTIVITY);
+        });
+        setProviderStatusState('live updates');
+      },
+      onDisconnected: () => {
+        setProviderStreamState('reconnecting');
+        setProviderStatusState((previous) =>
+          previous.startsWith('error') ? previous : 'live reconnecting...'
+        );
+      }
+    });
+
+    return () => {
+      disconnect();
+    };
   }, [session]);
 
   useEffect(() => {
@@ -275,6 +361,9 @@ export function App(): JSX.Element {
         setAdminDraftValues({});
         setAdminSettingsStatus('hidden-for-non-admin');
         setProviderStatuses([]);
+        setProviderActivity([]);
+        setProviderStreamState('disconnected');
+        setIsProviderActivityHydrated(false);
         setProviderStatusState('hidden-for-non-admin');
       }
       showToast('success', `Welcome back, ${result.user.username}.`);
@@ -319,6 +408,91 @@ export function App(): JSX.Element {
     }
 
     await loadAdminSettingsWithToken(session.accessToken);
+  }
+
+  async function handleTriggerProviderSync(provider: string): Promise<void> {
+    if (!session || session.user.role !== 'admin') {
+      setProviderStatusState('forbidden-for-non-admin');
+      return;
+    }
+
+    setSyncingProvider(provider);
+
+    try {
+      const updated = await triggerAdminProviderSync({
+        accessToken: session.accessToken,
+        provider
+      });
+
+      setProviderStatuses((previous) => {
+        const next = [...previous.filter((item) => item.provider !== updated.provider), updated];
+        next.sort((a, b) => a.provider.localeCompare(b.provider));
+        return next;
+      });
+
+      setProviderActivity((previous) => {
+        const entry: ProviderActivityEntry = {
+          provider: updated.provider,
+          state: updated.state,
+          at: updated.lastSyncAt ?? new Date().toISOString(),
+          error: updated.lastError
+        };
+
+        return [entry, ...previous].slice(0, MAX_PROVIDER_ACTIVITY);
+      });
+
+      setProviderStatusState('live updates');
+      showToast('success', `Triggered sync for ${provider}.`);
+    } catch (error) {
+      if (error instanceof HttpStatusError && error.status === 401) {
+        handleUnauthorizedSession();
+        return;
+      }
+
+      showToast('error', `Failed to sync ${provider}.`);
+    } finally {
+      setSyncingProvider(null);
+    }
+  }
+
+  async function handleSaveProviderConfig(input: {
+    provider: string;
+    enabled: boolean;
+    intervalMinutes: number;
+  }): Promise<void> {
+    if (!session || session.user.role !== 'admin') {
+      setProviderStatusState('forbidden-for-non-admin');
+      return;
+    }
+
+    setSavingProviderConfig(input.provider);
+
+    try {
+      const updated = await updateAdminProviderConfig({
+        accessToken: session.accessToken,
+        provider: input.provider,
+        enabled: input.enabled,
+        intervalMinutes: input.intervalMinutes
+      });
+
+      setProviderStatuses((previous) => {
+        const next = [...previous.filter((item) => item.provider !== updated.provider), updated];
+        next.sort((a, b) => a.provider.localeCompare(b.provider));
+        return next;
+      });
+
+      setProviderStatusState('live updates');
+      showToast('success', `Saved provider config for ${input.provider}.`);
+    } catch (error) {
+      if (error instanceof HttpStatusError && error.status === 401) {
+        handleUnauthorizedSession();
+        return;
+      }
+
+      showToast('error', `Failed to save config for ${input.provider}.`);
+    } finally {
+      setSavingProviderConfig(null);
+    }
   }
 
   async function handleSaveAdminSetting(key: string): Promise<void> {
@@ -616,10 +790,31 @@ export function App(): JSX.Element {
                       status={providerStatusState}
                       providers={providerStatuses}
                       isLoading={isProviderStatusLoading}
+                      realtimeState={providerStreamState}
+                      syncingProvider={syncingProvider}
+                      savingProviderConfig={savingProviderConfig}
+                      onTriggerSync={(provider) => {
+                        void handleTriggerProviderSync(provider);
+                      }}
+                      onSaveProviderConfig={(input) => {
+                        void handleSaveProviderConfig(input);
+                      }}
                       onReload={() => {
                         if (session) {
                           void loadAdminProvidersWithToken(session.accessToken);
                         }
+                      }}
+                    />
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <ProviderActivityLogPanel
+                      entries={providerActivity}
+                      onClear={() => {
+                        setProviderActivity([]);
+                        if (session) {
+                          clearProviderActivity(session.user.id);
+                        }
+                        showToast('info', 'Provider activity log cleared.');
                       }}
                     />
                   </div>
