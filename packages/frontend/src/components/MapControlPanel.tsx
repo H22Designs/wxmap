@@ -1,4 +1,5 @@
 import type { MetricKey } from './StationMap';
+import type { RadarFrameDensity } from '../services/api';
 import { controlGridStyle } from '../styles/ui';
 
 type MapControlPanelProps = {
@@ -6,18 +7,22 @@ type MapControlPanelProps = {
   selectedProvider: string;
   providerOptions: string[];
   radarHours: 1 | 3 | 6 | 12;
+  radarFrameDensity: RadarFrameDensity;
   radarSpeedMs: number;
   radarOpacity: number;
   radarPlaying: boolean;
+  darkMode: boolean;
   radarStatus: string;
   filteredCount: number;
   totalCount: number;
   onMetricChange: (metric: MetricKey) => void;
   onProviderChange: (provider: string) => void;
   onRadarHoursChange: (hours: 1 | 3 | 6 | 12) => void;
+  onRadarFrameDensityChange: (density: RadarFrameDensity) => void;
   onRadarSpeedChange: (speedMs: number) => void;
   onRadarOpacityChange: (opacity: number) => void;
   onToggleRadarPlaying: () => void;
+  onToggleDarkMode: () => void;
 };
 
 export function MapControlPanel({
@@ -25,18 +30,22 @@ export function MapControlPanel({
   selectedProvider,
   providerOptions,
   radarHours,
+  radarFrameDensity,
   radarSpeedMs,
   radarOpacity,
   radarPlaying,
+  darkMode,
   radarStatus,
   filteredCount,
   totalCount,
   onMetricChange,
   onProviderChange,
   onRadarHoursChange,
+  onRadarFrameDensityChange,
   onRadarSpeedChange,
   onRadarOpacityChange,
-  onToggleRadarPlaying
+  onToggleRadarPlaying,
+  onToggleDarkMode
 }: MapControlPanelProps): JSX.Element {
   return (
     <div style={controlGridStyle}>
@@ -90,8 +99,19 @@ export function MapControlPanel({
           onChange={(event) => onRadarSpeedChange(Number(event.target.value))}
         >
           <option value={1200}>Slow</option>
-          <option value={700}>Normal</option>
+          <option value={550}>Normal</option>
           <option value={350}>Fast</option>
+        </select>
+      </label>
+      <label style={{ display: 'grid', gap: 4 }}>
+        Radar frame density
+        <select
+          aria-label="Select radar frame density"
+          value={radarFrameDensity}
+          onChange={(event) => onRadarFrameDensityChange(event.target.value as RadarFrameDensity)}
+        >
+          <option value="normal">Normal</option>
+          <option value="dense">Smooth (more frames)</option>
         </select>
       </label>
       <label style={{ display: 'grid', gap: 4 }}>
@@ -108,6 +128,9 @@ export function MapControlPanel({
       </label>
       <button type="button" onClick={onToggleRadarPlaying} aria-label="Toggle radar playback">
         {radarPlaying ? 'Pause radar' : 'Play radar'}
+      </button>
+      <button type="button" onClick={onToggleDarkMode} aria-label="Toggle dark mode">
+        {darkMode ? 'Use light mode' : 'Use dark mode'}
       </button>
       <div>
         Radar status: <strong>{radarStatus}</strong>

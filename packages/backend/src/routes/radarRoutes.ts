@@ -11,6 +11,7 @@ type RainViewerMapsResponse = {
   host?: string;
   radar?: {
     past?: RainViewerFrame[];
+    nowcast?: RainViewerFrame[];
   };
 };
 
@@ -44,6 +45,14 @@ function parseHours(input: unknown): number {
   return 12;
 }
 
+function parseFrameDensity(input: unknown): 'normal' | 'dense' {
+  if (typeof input !== 'string') {
+    return 'normal';
+  }
+
+  return input.trim().toLowerCase() === 'dense' ? 'dense' : 'normal';
+}
+
 function buildTileUrl(host: string, path: string): string {
   const normalizedHost = host.endsWith('/') ? host.slice(0, -1) : host;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -51,12 +60,16 @@ function buildTileUrl(host: string, path: string): string {
 }
 
 radarRouter.get('/frames', async (req, res) => {
-  const { lat, lng, hours } = req.query;
+  const { lat, lng, hours, frameDensity } = req.query;
   const parsedLat = parseNumber(lat);
   const parsedLng = parseNumber(lng);
   const selectedHours = parseHours(hours);
+  const selectedFrameDensity = parseFrameDensity(frameDensity);
   const windowStartUnixSeconds = Math.floor(Date.now() / 1000) - selectedHours * 3600;
-  const targetFrameCount = Math.min(24, Math.max(6, selectedHours * 6));
+  const targetFrameCount =
+    selectedFrameDensity === 'dense'
+      ? Math.min(48, Math.max(12, selectedHours * 12))
+      : Math.min(20, Math.max(6, selectedHours * 4));
 
   let frames: Array<{ id: string; observedAt: string; tileUrl: string }> = [];
 
@@ -71,7 +84,10 @@ radarRouter.get('/frames', async (req, res) => {
 
     const payload = (await response.json()) as RainViewerMapsResponse;
     const host = payload.host && payload.host.trim() ? payload.host : DEFAULT_RAINVIEWER_HOST;
-    const allFrames = payload.radar?.past ?? [];
+    const allFrames =
+      selectedFrameDensity === 'dense'
+        ? [...(payload.radar?.past ?? []), ...(payload.radar?.nowcast ?? [])]
+        : payload.radar?.past ?? [];
 
     frames = allFrames
       .filter((frame) => Number.isFinite(frame.time) && frame.time >= windowStartUnixSeconds && !!frame.path)
@@ -93,6 +109,7 @@ radarRouter.get('/frames', async (req, res) => {
     },
     frameIntervalMinutes: 5,
     selectedHours,
+    frameDensity: selectedFrameDensity,
     frames
   });
 });

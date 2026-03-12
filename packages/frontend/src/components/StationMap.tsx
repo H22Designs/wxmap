@@ -22,6 +22,7 @@ type StationMapProps = {
   radarOpacity: number;
   radarSpeedMs: number;
   radarPlaying: boolean;
+  darkMode: boolean;
   selectedStationId: string | null;
   onStationSelect: (stationId: string) => void;
 };
@@ -130,6 +131,7 @@ export function StationMap({
   radarOpacity,
   radarSpeedMs,
   radarPlaying,
+  darkMode,
   selectedStationId,
   onStationSelect
 }: StationMapProps): JSX.Element {
@@ -159,8 +161,16 @@ export function StationMap({
     <div aria-label="Station map" style={mapContainerStyle}>
       <MapContainer center={center} zoom={5} style={{ height: '100%', width: '100%' }}>
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={
+            darkMode
+              ? '&copy; OpenStreetMap contributors &copy; CARTO'
+              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          }
+          url={
+            darkMode
+              ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+              : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+          }
         />
         {radarFrames.map((frame) => {
           const isActive = activeFrame?.id === frame.id;
@@ -171,6 +181,7 @@ export function StationMap({
               attribution="Radar © RainViewer"
               url={frame.tileUrl}
               opacity={isActive ? radarOpacity : 0}
+              className="wx-radar-layer"
             />
           );
         })}

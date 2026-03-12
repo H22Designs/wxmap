@@ -19,6 +19,7 @@ import {
   type LoginResult,
   type Observation,
   type RadarFrame,
+  type RadarFrameDensity,
   type Station
 } from './services/api';
 import { AdminSettingsPanel } from './components/AdminSettingsPanel';
@@ -40,6 +41,7 @@ import {
 } from './services/providerActivityStorage';
 
 const SESSION_STORAGE_KEY = 'wxmap.session.v1';
+const THEME_STORAGE_KEY = 'wxmap.theme.v1';
 const MAX_PROVIDER_ACTIVITY = 25;
 
 export function App(): JSX.Element {
@@ -74,9 +76,11 @@ export function App(): JSX.Element {
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
   const [radarFrames, setRadarFrames] = useState<RadarFrame[]>([]);
   const [radarHours, setRadarHours] = useState<1 | 3 | 6 | 12>(3);
+  const [radarFrameDensity, setRadarFrameDensity] = useState<RadarFrameDensity>('normal');
   const [radarSpeedMs, setRadarSpeedMs] = useState<number>(550);
   const [radarOpacity, setRadarOpacity] = useState<number>(0.45);
   const [radarPlaying, setRadarPlaying] = useState<boolean>(true);
+  const [darkMode, setDarkMode] = useState<boolean>(false);
   const [radarStatus, setRadarStatus] = useState<string>('loading...');
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [selectedStationHistory, setSelectedStationHistory] = useState<Observation[]>([]);
@@ -209,7 +213,16 @@ export function App(): JSX.Element {
     } catch {
       window.localStorage.removeItem(SESSION_STORAGE_KEY);
     }
+
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme === 'dark') {
+      setDarkMode(true);
+    }
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, darkMode ? 'dark' : 'light');
+  }, [darkMode]);
 
   useEffect(() => {
     if (!session) {
@@ -305,7 +318,8 @@ export function App(): JSX.Element {
     void fetchRadarFrames({
       lat: center.lat,
       lng: center.lng,
-      hours: radarHours
+      hours: radarHours,
+      frameDensity: radarFrameDensity
     })
       .then((frames) => {
         setRadarFrames(frames);
@@ -315,7 +329,7 @@ export function App(): JSX.Element {
         setRadarFrames([]);
         setRadarStatus('error');
       });
-  }, [radarHours, stations]);
+  }, [radarHours, radarFrameDensity, stations]);
 
   async function handleRegister(): Promise<void> {
     if (isAuthSubmitting) {
@@ -622,10 +636,32 @@ export function App(): JSX.Element {
 
   return (
     <main
-      style={{ fontFamily: 'system-ui, sans-serif', padding: 24 }}
+      style={{
+        fontFamily: 'system-ui, sans-serif',
+        padding: 24,
+        minHeight: '100vh',
+        backgroundColor: darkMode ? '#0f172a' : '#f8fafc',
+        color: darkMode ? '#e2e8f0' : '#0f172a',
+        ['--wx-border' as string]: darkMode ? '#334155' : '#d1d5db',
+        ['--wx-surface' as string]: darkMode ? '#111827' : '#ffffff',
+        ['--wx-skeleton-start' as string]: darkMode ? '#1f2937' : '#f3f4f6',
+        ['--wx-skeleton-mid' as string]: darkMode ? '#334155' : '#e5e7eb'
+      }}
       aria-busy={stationsStatus === 'loading...' || isAuthSubmitting || isAdminLoading}
     >
-      <style>{`@keyframes wxmapPulse {0% {background-position: 100% 50%;} 100% {background-position: 0 50%;}}`}</style>
+      <style>{`
+        @keyframes wxmapPulse {0% {background-position: 100% 50%;} 100% {background-position: 0 50%;}}
+        select, input, button {
+          background: ${darkMode ? '#1f2937' : '#ffffff'};
+          color: ${darkMode ? '#e2e8f0' : '#111827'};
+          border: 1px solid ${darkMode ? '#334155' : '#cbd5e1'};
+          border-radius: 8px;
+        }
+        .wx-radar-layer {
+          transition: opacity 240ms linear;
+          will-change: opacity;
+        }
+      `}</style>
       <div
         style={{
           display: 'flex',
@@ -654,18 +690,22 @@ export function App(): JSX.Element {
           selectedProvider={selectedProvider}
           providerOptions={providerOptions}
           radarHours={radarHours}
+          radarFrameDensity={radarFrameDensity}
           radarSpeedMs={radarSpeedMs}
           radarOpacity={radarOpacity}
           radarPlaying={radarPlaying}
+          darkMode={darkMode}
           radarStatus={radarStatus}
           filteredCount={filteredStations.length}
           totalCount={stations.length}
           onMetricChange={setSelectedMetric}
           onProviderChange={setSelectedProvider}
           onRadarHoursChange={setRadarHours}
+          onRadarFrameDensityChange={setRadarFrameDensity}
           onRadarSpeedChange={setRadarSpeedMs}
           onRadarOpacityChange={setRadarOpacity}
           onToggleRadarPlaying={() => setRadarPlaying((previous) => !previous)}
+          onToggleDarkMode={() => setDarkMode((previous) => !previous)}
         />
         {stationsStatus === 'loading...' ? (
           <div aria-label="Loading station map" role="status" aria-live="polite" style={{ display: 'grid', gap: 8 }}>
@@ -682,6 +722,7 @@ export function App(): JSX.Element {
           radarOpacity={radarOpacity}
           radarSpeedMs={radarSpeedMs}
           radarPlaying={radarPlaying}
+          darkMode={darkMode}
           selectedStationId={selectedStationId}
           onStationSelect={setSelectedStationId}
         />

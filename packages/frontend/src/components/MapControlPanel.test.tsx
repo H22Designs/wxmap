@@ -7,9 +7,11 @@ describe('MapControlPanel', () => {
     const onMetricChange = vi.fn();
     const onProviderChange = vi.fn();
     const onRadarHoursChange = vi.fn();
+    const onRadarFrameDensityChange = vi.fn();
     const onRadarSpeedChange = vi.fn();
     const onRadarOpacityChange = vi.fn();
     const onToggleRadarPlaying = vi.fn();
+    const onToggleDarkMode = vi.fn();
 
     render(
       <MapControlPanel
@@ -17,33 +19,41 @@ describe('MapControlPanel', () => {
         selectedProvider="all"
         providerOptions={['all', 'nws']}
         radarHours={3}
-        radarSpeedMs={700}
+        radarFrameDensity="normal"
+        radarSpeedMs={550}
         radarOpacity={0.45}
         radarPlaying={true}
+        darkMode={false}
         radarStatus="loaded"
         filteredCount={3}
         totalCount={4}
         onMetricChange={onMetricChange}
         onProviderChange={onProviderChange}
         onRadarHoursChange={onRadarHoursChange}
+        onRadarFrameDensityChange={onRadarFrameDensityChange}
         onRadarSpeedChange={onRadarSpeedChange}
         onRadarOpacityChange={onRadarOpacityChange}
         onToggleRadarPlaying={onToggleRadarPlaying}
+        onToggleDarkMode={onToggleDarkMode}
       />
     );
 
     fireEvent.change(screen.getByLabelText('Select weather metric'), { target: { value: 'humidityPct' } });
     fireEvent.change(screen.getByLabelText('Filter by provider'), { target: { value: 'nws' } });
     fireEvent.change(screen.getByLabelText('Select radar time range'), { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Select radar frame density'), { target: { value: 'dense' } });
     fireEvent.change(screen.getByLabelText('Select radar playback speed'), { target: { value: '350' } });
     fireEvent.change(screen.getByLabelText('Adjust radar opacity'), { target: { value: '70' } });
     fireEvent.click(screen.getByRole('button', { name: 'Toggle radar playback' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle dark mode' }));
 
     expect(onMetricChange).toHaveBeenCalledWith('humidityPct');
     expect(onProviderChange).toHaveBeenCalledWith('nws');
     expect(onRadarHoursChange).toHaveBeenCalledWith(6);
+    expect(onRadarFrameDensityChange).toHaveBeenCalledWith('dense');
     expect(onRadarSpeedChange).toHaveBeenCalledWith(350);
     expect(onRadarOpacityChange).toHaveBeenCalledWith(0.7);
     expect(onToggleRadarPlaying).toHaveBeenCalledTimes(1);
+    expect(onToggleDarkMode).toHaveBeenCalledTimes(1);
   });
 });

@@ -23,8 +23,11 @@ type RadarFramesResponse = {
   };
   frameIntervalMinutes: number;
   selectedHours: number;
+  frameDensity?: 'normal' | 'dense';
   frames: RadarFrame[];
 };
+
+export type RadarFrameDensity = 'normal' | 'dense';
 
 type AuthUser = {
   id: string;
@@ -174,11 +177,13 @@ export async function fetchRadarFrames(input: {
   lat: number;
   lng: number;
   hours: 1 | 3 | 6 | 12;
+  frameDensity?: RadarFrameDensity;
 }): Promise<RadarFrame[]> {
   const query = new URLSearchParams({
     lat: input.lat.toFixed(4),
     lng: input.lng.toFixed(4),
-    hours: String(input.hours)
+    hours: String(input.hours),
+    frameDensity: input.frameDensity ?? 'normal'
   });
 
   const response = await fetch(`${apiBaseUrl}/radar/frames?${query.toString()}`);
