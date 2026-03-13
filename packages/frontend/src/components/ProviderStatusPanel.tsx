@@ -15,6 +15,8 @@ type ProviderStatusPanelProps = {
     enabled: boolean;
     intervalMinutes: number;
     endpoint: string | null;
+    apiKey?: string | null;
+    apiSecret?: string | null;
   }) => void;
   onReload: () => void;
 };
@@ -23,6 +25,10 @@ type ProviderDraft = {
   enabled: boolean;
   intervalMinutes: number;
   endpoint: string;
+  apiKey: string;
+  apiSecret: string;
+  clearApiKey: boolean;
+  clearApiSecret: boolean;
 };
 
 function getRealtimeBadge(realtimeState: ProviderStatusPanelProps['realtimeState']): {
@@ -90,7 +96,11 @@ export function ProviderStatusPanel({
       next[provider.provider] = {
         enabled: provider.enabled,
         intervalMinutes: provider.intervalMinutes,
-        endpoint: provider.endpoint ?? ''
+        endpoint: provider.endpoint ?? '',
+        apiKey: '',
+        apiSecret: '',
+        clearApiKey: false,
+        clearApiSecret: false
       };
     }
 
@@ -135,6 +145,7 @@ export function ProviderStatusPanel({
                 <th align="left" style={{ padding: '8px 8px' }}>State</th>
                 <th align="left" style={{ padding: '8px 8px' }}>Interval</th>
                 <th align="left" style={{ padding: '8px 8px' }}>Endpoint</th>
+                <th align="left" style={{ padding: '8px 8px' }}>Credentials</th>
                 <th align="left" style={{ padding: '8px 8px' }}>Last Sync</th>
                 <th align="left" style={{ padding: '8px 8px' }}>Next Sync</th>
                 <th align="left" style={{ padding: '8px 8px' }}>Actions</th>
@@ -181,7 +192,11 @@ export function ProviderStatusPanel({
                               [item.provider]: {
                                 enabled: event.target.checked,
                                 intervalMinutes: previous[item.provider]?.intervalMinutes ?? item.intervalMinutes,
-                                endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? ''
+                                endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? '',
+                                apiKey: previous[item.provider]?.apiKey ?? '',
+                                apiSecret: previous[item.provider]?.apiSecret ?? '',
+                                clearApiKey: previous[item.provider]?.clearApiKey ?? false,
+                                clearApiSecret: previous[item.provider]?.clearApiSecret ?? false
                               }
                             }))
                           }
@@ -207,7 +222,11 @@ export function ProviderStatusPanel({
                               [item.provider]: {
                                 enabled: previous[item.provider]?.enabled ?? item.enabled,
                                 intervalMinutes,
-                                endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? ''
+                                endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? '',
+                                apiKey: previous[item.provider]?.apiKey ?? '',
+                                apiSecret: previous[item.provider]?.apiSecret ?? '',
+                                clearApiKey: previous[item.provider]?.clearApiKey ?? false,
+                                clearApiSecret: previous[item.provider]?.clearApiSecret ?? false
                               }
                             }));
                           }}
@@ -228,7 +247,11 @@ export function ProviderStatusPanel({
                           [item.provider]: {
                             enabled: previous[item.provider]?.enabled ?? item.enabled,
                             intervalMinutes: previous[item.provider]?.intervalMinutes ?? item.intervalMinutes,
-                            endpoint: event.target.value
+                            endpoint: event.target.value,
+                            apiKey: previous[item.provider]?.apiKey ?? '',
+                            apiSecret: previous[item.provider]?.apiSecret ?? '',
+                            clearApiKey: previous[item.provider]?.clearApiKey ?? false,
+                            clearApiSecret: previous[item.provider]?.clearApiSecret ?? false
                           }
                         }))
                       }
@@ -237,20 +260,133 @@ export function ProviderStatusPanel({
                       style={{ minWidth: 180 }}
                     />
                   </td>
+                  <td style={{ minWidth: 250, paddingRight: 8 }}>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--wx-muted, #475569)' }}>
+                        Stored: key {item.hasApiKey ? 'configured' : 'not set'} · secret {item.hasApiSecret ? 'configured' : 'not set'}
+                      </div>
+                      <input
+                        type="password"
+                        value={draftByProvider[item.provider]?.apiKey ?? ''}
+                        onChange={(event) =>
+                          setDraftByProvider((previous) => ({
+                            ...previous,
+                            [item.provider]: {
+                              enabled: previous[item.provider]?.enabled ?? item.enabled,
+                              intervalMinutes: previous[item.provider]?.intervalMinutes ?? item.intervalMinutes,
+                              endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? '',
+                              apiKey: event.target.value,
+                              apiSecret: previous[item.provider]?.apiSecret ?? '',
+                              clearApiKey: false,
+                              clearApiSecret: previous[item.provider]?.clearApiSecret ?? false
+                            }
+                          }))
+                        }
+                        placeholder={item.hasApiKey ? 'Enter new API key to rotate' : 'Enter API key'}
+                        aria-label={`API key for ${item.provider}`}
+                      />
+                      <input
+                        type="password"
+                        value={draftByProvider[item.provider]?.apiSecret ?? ''}
+                        onChange={(event) =>
+                          setDraftByProvider((previous) => ({
+                            ...previous,
+                            [item.provider]: {
+                              enabled: previous[item.provider]?.enabled ?? item.enabled,
+                              intervalMinutes: previous[item.provider]?.intervalMinutes ?? item.intervalMinutes,
+                              endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? '',
+                              apiKey: previous[item.provider]?.apiKey ?? '',
+                              apiSecret: event.target.value,
+                              clearApiKey: previous[item.provider]?.clearApiKey ?? false,
+                              clearApiSecret: false
+                            }
+                          }))
+                        }
+                        placeholder={item.hasApiSecret ? 'Enter new API secret to rotate' : 'Enter API secret'}
+                        aria-label={`API secret for ${item.provider}`}
+                      />
+                      <div style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap' }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={draftByProvider[item.provider]?.clearApiKey ?? false}
+                            onChange={(event) =>
+                              setDraftByProvider((previous) => ({
+                                ...previous,
+                                [item.provider]: {
+                                  enabled: previous[item.provider]?.enabled ?? item.enabled,
+                                  intervalMinutes: previous[item.provider]?.intervalMinutes ?? item.intervalMinutes,
+                                  endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? '',
+                                  apiKey: event.target.checked ? '' : previous[item.provider]?.apiKey ?? '',
+                                  apiSecret: previous[item.provider]?.apiSecret ?? '',
+                                  clearApiKey: event.target.checked,
+                                  clearApiSecret: previous[item.provider]?.clearApiSecret ?? false
+                                }
+                              }))
+                            }
+                            aria-label={`Clear API key for ${item.provider}`}
+                          />
+                          Clear key
+                        </label>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={draftByProvider[item.provider]?.clearApiSecret ?? false}
+                            onChange={(event) =>
+                              setDraftByProvider((previous) => ({
+                                ...previous,
+                                [item.provider]: {
+                                  enabled: previous[item.provider]?.enabled ?? item.enabled,
+                                  intervalMinutes: previous[item.provider]?.intervalMinutes ?? item.intervalMinutes,
+                                  endpoint: previous[item.provider]?.endpoint ?? item.endpoint ?? '',
+                                  apiKey: previous[item.provider]?.apiKey ?? '',
+                                  apiSecret: event.target.checked ? '' : previous[item.provider]?.apiSecret ?? '',
+                                  clearApiKey: previous[item.provider]?.clearApiKey ?? false,
+                                  clearApiSecret: event.target.checked
+                                }
+                              }))
+                            }
+                            aria-label={`Clear API secret for ${item.provider}`}
+                          />
+                          Clear secret
+                        </label>
+                      </div>
+                    </div>
+                  </td>
                   <td style={{ padding: '8px 8px' }}>{formatDate(item.lastSyncAt)}</td>
                   <td style={{ padding: '8px 8px' }}>{formatDate(item.nextSyncAt)}</td>
                   <td>
                     <div style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          const draft = draftByProvider[item.provider] ?? {
+                            enabled: item.enabled,
+                            intervalMinutes: item.intervalMinutes,
+                            endpoint: item.endpoint ?? '',
+                            apiKey: '',
+                            apiSecret: '',
+                            clearApiKey: false,
+                            clearApiSecret: false
+                          };
+
                           onSaveProviderConfig({
                             provider: item.provider,
-                            enabled: (draftByProvider[item.provider] ?? item).enabled,
-                            intervalMinutes: (draftByProvider[item.provider] ?? item).intervalMinutes,
-                            endpoint: ((draftByProvider[item.provider] ?? item).endpoint ?? '').trim() || null
-                          })
-                        }
+                            enabled: draft.enabled,
+                            intervalMinutes: draft.intervalMinutes,
+                            endpoint: (draft.endpoint ?? '').trim() || null,
+                            ...(draft.clearApiKey
+                              ? { apiKey: null }
+                              : draft.apiKey.trim()
+                                ? { apiKey: draft.apiKey.trim() }
+                                : {}),
+                            ...(draft.clearApiSecret
+                              ? { apiSecret: null }
+                              : draft.apiSecret.trim()
+                                ? { apiSecret: draft.apiSecret.trim() }
+                                : {})
+                          });
+                        }}
                         disabled={savingProviderConfig === item.provider}
                         aria-label={`Save config for ${item.provider}`}
                       >

@@ -16,6 +16,8 @@ type AdminRouterDeps = {
       enabled: boolean;
       intervalMinutes: number;
       endpoint: string | null;
+      apiKey: string | null;
+      apiSecret: string | null;
       updatedAt: string;
     }>;
     upsertConfig: (input: {
@@ -84,6 +86,8 @@ export function adminRouter(deps: AdminRouterDeps): Router {
         enabled: config.enabled,
         intervalMinutes: config.intervalMinutes,
         endpoint: config.endpoint,
+        hasApiKey: Boolean(config.apiKey),
+        hasApiSecret: Boolean(config.apiSecret),
         updatedAt: config.updatedAt,
         state: status?.state ?? 'idle',
         lastSyncAt: status?.lastSyncAt ?? null,
@@ -115,9 +119,11 @@ export function adminRouter(deps: AdminRouterDeps): Router {
     const hasEnabled = typeof req.body?.enabled === 'boolean';
     const hasInterval = req.body?.intervalMinutes !== undefined;
     const hasEndpoint = req.body?.endpoint !== undefined;
+    const hasApiKey = req.body?.apiKey !== undefined;
+    const hasApiSecret = req.body?.apiSecret !== undefined;
 
-    if (!hasEnabled && !hasInterval && !hasEndpoint) {
-      res.status(400).json({ error: 'At least one of enabled, intervalMinutes, or endpoint is required' });
+    if (!hasEnabled && !hasInterval && !hasEndpoint && !hasApiKey && !hasApiSecret) {
+      res.status(400).json({ error: 'At least one of enabled, intervalMinutes, endpoint, apiKey, or apiSecret is required' });
       return;
     }
 
@@ -178,6 +184,8 @@ export function adminRouter(deps: AdminRouterDeps): Router {
       enabled: config.enabled,
       intervalMinutes: config.intervalMinutes,
       endpoint: config.endpoint,
+      hasApiKey: Boolean(config.apiKey),
+      hasApiSecret: Boolean(config.apiSecret),
       updatedAt: config.updatedAt,
       state: status.state,
       lastSyncAt: status.lastSyncAt,

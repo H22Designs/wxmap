@@ -1,5 +1,12 @@
-import type { Station } from '../types/models.js';
-import { fetchLatestCwopLikeObservation } from './cwopObservation.js';
+import {
+  fetchBackfillCwopLikeObservations,
+  fetchLatestCwopLikeObservation
+} from './cwopObservation.js';
+
+type StationLike = {
+  provider: string;
+  externalId: string;
+};
 
 type ProviderLookupConfig = {
   endpoint?: string | null;
@@ -198,7 +205,7 @@ async function fetchWeatherGovBackfill(stationId: string, days: number): Promise
   return mapped;
 }
 
-function buildCustomEndpointUrl(config: ProviderLookupConfig, station: Station, mode: 'latest' | 'backfill', days?: number): string | null {
+function buildCustomEndpointUrl(config: ProviderLookupConfig, station: StationLike, mode: 'latest' | 'backfill', days?: number): string | null {
   const endpoint = config.endpoint?.trim();
 
   if (!endpoint) {
@@ -278,7 +285,7 @@ function mapCustomObservationRecord(record: Record<string, unknown>): ProviderOb
   };
 }
 
-async function fetchCustomLatest(station: Station, config: ProviderLookupConfig): Promise<ProviderObservationSample | null> {
+async function fetchCustomLatest(station: StationLike, config: ProviderLookupConfig): Promise<ProviderObservationSample | null> {
   const url = buildCustomEndpointUrl(config, station, 'latest');
 
   if (!url) {
@@ -306,7 +313,7 @@ async function fetchCustomLatest(station: Station, config: ProviderLookupConfig)
 }
 
 async function fetchCustomBackfill(
-  station: Station,
+  station: StationLike,
   days: number,
   config: ProviderLookupConfig
 ): Promise<ProviderObservationSample[]> {
@@ -346,7 +353,7 @@ async function fetchCustomBackfill(
 }
 
 export async function fetchLatestObservationForStation(input: {
-  station: Station;
+  station: StationLike;
   config?: ProviderLookupConfig | null;
 }): Promise<ProviderObservationSample | null> {
   const provider = input.station.provider.trim().toLowerCase();
@@ -380,12 +387,24 @@ export async function fetchLatestObservationForStation(input: {
 }
 
 export async function fetchBackfillObservationsForStation(input: {
-  station: Station;
+  station: StationLike;
   days: number;
   config?: ProviderLookupConfig | null;
 }): Promise<ProviderObservationSample[]> {
   const provider = input.station.provider.trim().toLowerCase();
   const days = Math.max(1, Math.min(Math.floor(input.days), 14));
+
+  if (provider === 'cwop' || provider === 'findu') {
+    const fromCwop = await fetchBackfillCwopLikeObservations({
+      provider,
+      externalId: input.station.externalId,
+      days
+    });
+
+    if (fromCwop.length > 0) {
+      return fromCwop;
+    }
+  }
 
   if (provider === 'nws' || provider === 'noaa' || provider === 'airport') {
     const stationId = resolveWeatherGovStationId(provider, input.station.externalId);

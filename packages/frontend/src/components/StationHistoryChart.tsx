@@ -25,6 +25,10 @@ type StationHistoryChartProps = {
   chartMode?: 'line' | 'area';
   weatherVisualTone?: 'balanced' | 'vivid' | 'minimal';
   animated?: boolean;
+  maxPoints?: number;
+  showPoints?: boolean;
+  smoothing?: 'raw' | 'smooth';
+  height?: number;
 };
 
 function getMetricValue(metric: HistoryMetricKey, observation: Observation, unitSystem: UnitSystem): number | null {
@@ -135,9 +139,14 @@ export function StationHistoryChart({
   unitSystem,
   chartMode = 'line',
   weatherVisualTone = 'balanced',
-  animated = false
+  animated = false,
+  maxPoints = 240,
+  showPoints = true,
+  smoothing = 'smooth',
+  height = 280
 }: StationHistoryChartProps): JSX.Element {
-  const points = [...observations].reverse();
+  const safeMaxPoints = Math.max(24, Math.min(maxPoints, 720));
+  const points = [...observations].slice(0, safeMaxPoints).reverse();
   const color = getMetricColor(metric);
   const rgb = hexToRgb(color);
   const alpha = getToneAlpha(weatherVisualTone);
@@ -153,8 +162,9 @@ export function StationHistoryChart({
         borderColor: color,
         backgroundColor,
         fill: isArea,
-        pointRadius: 2,
-        tension: 0.3,
+        pointRadius: showPoints ? 2 : 0,
+        pointHoverRadius: showPoints ? 4 : 0,
+        tension: smoothing === 'smooth' ? 0.3 : 0,
         borderWidth: weatherVisualTone === 'minimal' ? 1.8 : 2.4,
         spanGaps: true
       }
@@ -167,7 +177,7 @@ export function StationHistoryChart({
       {points.length === 0 ? (
         <p>No observations available yet.</p>
       ) : (
-        <div style={{ height: 280 }}>
+        <div style={{ height }}>
           <Line
             data={chartData}
             options={{

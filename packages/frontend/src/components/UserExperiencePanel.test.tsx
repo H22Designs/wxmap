@@ -12,6 +12,7 @@ function renderPanel(overrides: Partial<ComponentProps<typeof UserExperiencePane
   const onWeatherVisualToneChange = vi.fn();
   const onShowWeatherAnimationsChange = vi.fn();
   const onShowMiniChartsChange = vi.fn();
+  const onEssentialModeChange = vi.fn();
   const onHistoryChartModeChange = vi.fn();
   const onVisibleProvidersChange = vi.fn();
 
@@ -25,6 +26,7 @@ function renderPanel(overrides: Partial<ComponentProps<typeof UserExperiencePane
       weatherVisualTone="balanced"
       showWeatherAnimations={true}
       showMiniCharts={true}
+      essentialMode={false}
       historyChartMode="line"
       providerOptions={['all', 'nws', 'noaa', 'metar']}
       visibleProviders={['noaa', 'nws']}
@@ -36,6 +38,7 @@ function renderPanel(overrides: Partial<ComponentProps<typeof UserExperiencePane
       onWeatherVisualToneChange={onWeatherVisualToneChange}
       onShowWeatherAnimationsChange={onShowWeatherAnimationsChange}
       onShowMiniChartsChange={onShowMiniChartsChange}
+      onEssentialModeChange={onEssentialModeChange}
       onHistoryChartModeChange={onHistoryChartModeChange}
       onVisibleProvidersChange={onVisibleProvidersChange}
       persistenceState="saved"

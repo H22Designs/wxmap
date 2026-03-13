@@ -2,8 +2,10 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import type { AccessTokenPayload } from '../auth/tokens.js';
 import { requireAuthenticatedUser } from '../middleware/requireAuthenticatedUser.js';
-import { fetchLatestCwopLikeObservation } from '../services/cwopObservation.js';
-import { fetchBackfillObservationsForStation } from '../services/providerObservations.js';
+import {
+  fetchBackfillObservationsForStation,
+  fetchLatestObservationForStation
+} from '../services/providerObservations.js';
 import {
   resolveProviderStationCandidate,
   listProviderStationCandidates
@@ -151,9 +153,9 @@ export function weatherRouter(deps: WeatherRouterDeps): Router {
       return;
     }
 
-    const latest = await fetchLatestCwopLikeObservation({
-      provider: station.provider,
-      externalId: station.externalId
+    const latest = await fetchLatestObservationForStation({
+      station,
+      config: deps.getProviderLookupConfig?.(station.provider) ?? null
     });
 
     if (!latest) {
@@ -460,12 +462,28 @@ export function weatherRouter(deps: WeatherRouterDeps): Router {
       });
     }
 
+    const normalizedProvider = station.provider.trim().toLowerCase();
+    const sourceStatus = samples.length > 0 ? 'ok' : 'no-data';
+    let note: string | null = null;
+
+    if (samples.length === 0) {
+      if (normalizedProvider === 'cwop' || normalizedProvider === 'findu') {
+        note = `No upstream CWOP/FindU weather reports were available for ${station.externalId} in the requested time window.`;
+      } else if (normalizedProvider === 'airport' || normalizedProvider === 'nws' || normalizedProvider === 'noaa') {
+        note = `No upstream weather.gov observations were available for ${station.externalId} in the requested time window.`;
+      } else {
+        note = `No upstream observations were available for ${station.externalId} in the requested time window.`;
+      }
+    }
+
     res.status(200).json({
       stationId: station.id,
       provider: station.provider,
       externalId: station.externalId,
       days,
-      imported: samples.length
+      imported: samples.length,
+      sourceStatus,
+      note
     });
   });
 

@@ -13,6 +13,7 @@ type UserExperiencePanelProps = {
   weatherVisualTone: 'balanced' | 'vivid' | 'minimal';
   showWeatherAnimations: boolean;
   showMiniCharts: boolean;
+  essentialMode: boolean;
   historyChartMode: 'line' | 'area';
   providerOptions: string[];
   visibleProviders: string[];
@@ -24,6 +25,7 @@ type UserExperiencePanelProps = {
   onWeatherVisualToneChange: (value: 'balanced' | 'vivid' | 'minimal') => void;
   onShowWeatherAnimationsChange: (value: boolean) => void;
   onShowMiniChartsChange: (value: boolean) => void;
+  onEssentialModeChange: (value: boolean) => void;
   onHistoryChartModeChange: (value: 'line' | 'area') => void;
   onVisibleProvidersChange: (providers: string[]) => void;
   persistenceState?: PreferencesPersistenceState;
@@ -38,6 +40,7 @@ export function UserExperiencePanel({
   weatherVisualTone,
   showWeatherAnimations,
   showMiniCharts,
+  essentialMode,
   historyChartMode,
   providerOptions,
   visibleProviders,
@@ -49,6 +52,7 @@ export function UserExperiencePanel({
   onWeatherVisualToneChange,
   onShowWeatherAnimationsChange,
   onShowMiniChartsChange,
+  onEssentialModeChange,
   onHistoryChartModeChange,
   onVisibleProvidersChange,
   persistenceState = 'guest'
@@ -181,6 +185,15 @@ export function UserExperiencePanel({
               aria-label="Toggle mini charts"
             />
             Show mini charts
+          </label>
+          <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={essentialMode}
+              onChange={(event) => onEssentialModeChange(event.target.checked)}
+              aria-label="Toggle essential mode"
+            />
+            Essential mobile mode
           </label>
           <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
             <input

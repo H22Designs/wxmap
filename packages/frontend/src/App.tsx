@@ -31,13 +31,17 @@ import {
   triggerStationBackfill
 } from './services/api';
 import { AdminSettingsPanel } from './components/AdminSettingsPanel';
+import { AlertTuningPanel, type AlertPreferences } from './components/AlertTuningPanel';
 import { AuthPanel } from './components/AuthPanel';
+import { ForecastTrustPanel } from './components/ForecastTrustPanel';
 import { LoadingSkeleton } from './components/LoadingSkeleton';
 import { MapControlPanel } from './components/MapControlPanel';
+import { ModelConsensusPanel } from './components/ModelConsensusPanel';
 import { ProviderActivityLogPanel, type ProviderActivityEntry } from './components/ProviderActivityLogPanel';
+import { ProviderDiagnosticsPanel } from './components/ProviderDiagnosticsPanel';
 import { ProviderStatusPanel } from './components/ProviderStatusPanel';
 import { SessionBadge } from './components/SessionBadge';
-import { StationHistoryChart } from './components/StationHistoryChart';
+import { StationHistoryChart, type HistoryMetricKey } from './components/StationHistoryChart';
 import { StationInsightsPanel } from './components/StationInsightsPanel';
 import { StationMap, type MetricKey } from './components/StationMap';
 import { ToastBanner, type Toast } from './components/ToastBanner';
@@ -63,11 +67,44 @@ const SURFACE_STYLE_STORAGE_KEY = 'wxmap.surfaceStyle.v1';
 const DASHBOARD_CARD_ORDER_STORAGE_KEY = 'wxmap.dashboardCardOrder.v1';
 const DASHBOARD_CARD_HIDDEN_STORAGE_KEY = 'wxmap.dashboardCardHidden.v1';
 const DASHBOARD_CARD_COLLAPSED_STORAGE_KEY = 'wxmap.dashboardCardCollapsed.v1';
+const DASHBOARD_CARD_SIZES_STORAGE_KEY = 'wxmap.dashboardCardSizes.v1';
+const HISTORY_VISIBLE_METRICS_STORAGE_KEY = 'wxmap.historyVisibleMetrics.v1';
+const HISTORY_POINT_LIMIT_STORAGE_KEY = 'wxmap.historyPointLimit.v1';
+const HISTORY_SMOOTHING_STORAGE_KEY = 'wxmap.historySmoothing.v1';
+const HISTORY_SHOW_POINTS_STORAGE_KEY = 'wxmap.historyShowPoints.v1';
+const DASHBOARD_VIEW_PRESETS_STORAGE_KEY = 'wxmap.dashboardViewPresets.v1';
+const DASHBOARD_ACTIVE_PRESET_ID_STORAGE_KEY = 'wxmap.dashboardActivePresetId.v1';
+const ESSENTIAL_MODE_STORAGE_KEY = 'wxmap.essentialMode.v1';
+const ALERT_PREFERENCES_STORAGE_KEY = 'wxmap.alertPreferences.v1';
 const MAX_PROVIDER_ACTIVITY = 25;
+
+const DEFAULT_ALERT_PREFERENCES: AlertPreferences = {
+  enabled: true,
+  tempHighC: 34,
+  tempLowC: -7,
+  windHighMs: 15,
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '06:00',
+  severity: 'elevated'
+};
 
 type WorkspaceView = 'dashboard' | 'explore' | 'admin';
 type SurfaceStyle = 'glass' | 'elevated' | 'neo';
 type DashboardCardId = 'map-controls' | 'experience' | 'map' | 'history';
+type DashboardCardSize = 'sm' | 'md' | 'lg';
+type DashboardViewPreset = {
+  id: string;
+  name: string;
+  cardSizes: Record<DashboardCardId, DashboardCardSize>;
+  visibleHistoryMetrics: HistoryMetricKey[];
+  historyPointLimit: number;
+  historySmoothing: 'raw' | 'smooth';
+  historyShowPoints: boolean;
+  unitSystem: UnitSystem;
+  essentialMode: boolean;
+  isBuiltIn?: boolean;
+};
 type ToastAction =
   | {
       kind: 'open-station-overview';
@@ -80,6 +117,75 @@ const DEFAULT_DASHBOARD_CARD_ORDER: DashboardCardId[] = [
   'experience',
   'map',
   'history'
+];
+
+const DEFAULT_DASHBOARD_CARD_SIZES: Record<DashboardCardId, DashboardCardSize> = {
+  'map-controls': 'md',
+  experience: 'md',
+  map: 'lg',
+  history: 'lg'
+};
+
+const ALL_HISTORY_METRICS: HistoryMetricKey[] = [
+  'tempC',
+  'humidityPct',
+  'windSpeedMs',
+  'pressureHpa',
+  'precipMm'
+];
+
+const BUILT_IN_VIEW_PRESETS: DashboardViewPreset[] = [
+  {
+    id: 'builtin-storm-chase',
+    name: 'Storm Chase',
+    cardSizes: {
+      'map-controls': 'md',
+      experience: 'sm',
+      map: 'lg',
+      history: 'lg'
+    },
+    visibleHistoryMetrics: ['tempC', 'windSpeedMs', 'pressureHpa', 'precipMm'],
+    historyPointLimit: 480,
+    historySmoothing: 'raw',
+    historyShowPoints: true,
+    unitSystem: 'imperial',
+    essentialMode: false,
+    isBuiltIn: true
+  },
+  {
+    id: 'builtin-aviation',
+    name: 'Aviation',
+    cardSizes: {
+      'map-controls': 'md',
+      experience: 'md',
+      map: 'lg',
+      history: 'md'
+    },
+    visibleHistoryMetrics: ['tempC', 'windSpeedMs', 'pressureHpa'],
+    historyPointLimit: 240,
+    historySmoothing: 'smooth',
+    historyShowPoints: false,
+    unitSystem: 'imperial',
+    essentialMode: true,
+    isBuiltIn: true
+  },
+  {
+    id: 'builtin-minimal',
+    name: 'Minimal',
+    cardSizes: {
+      'map-controls': 'sm',
+      experience: 'sm',
+      map: 'md',
+      history: 'sm'
+    },
+    visibleHistoryMetrics: ['tempC', 'windSpeedMs'],
+    historyPointLimit: 96,
+    historySmoothing: 'smooth',
+    historyShowPoints: false,
+    unitSystem: 'metric',
+    essentialMode: true,
+    isBuiltIn: true
+  }
 ];
 
 export function App(): JSX.Element {
@@ -127,6 +233,10 @@ export function App(): JSX.Element {
   const [weatherVisualTone, setWeatherVisualTone] = useState<'balanced' | 'vivid' | 'minimal'>('balanced');
   const [showWeatherAnimations, setShowWeatherAnimations] = useState(true);
   const [showMiniCharts, setShowMiniCharts] = useState(true);
+  const [essentialMode, setEssentialMode] = useState(false);
+  const [alertPreferences, setAlertPreferences] = useState<AlertPreferences>(
+    DEFAULT_ALERT_PREFERENCES
+  );
   const [historyChartMode, setHistoryChartMode] = useState<'line' | 'area'>('line');
   const [visibleProviders, setVisibleProviders] = useState<string[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('dashboard');
@@ -136,6 +246,20 @@ export function App(): JSX.Element {
   );
   const [hiddenDashboardCards, setHiddenDashboardCards] = useState<DashboardCardId[]>([]);
   const [collapsedDashboardCards, setCollapsedDashboardCards] = useState<DashboardCardId[]>([]);
+  const [dashboardCardSizes, setDashboardCardSizes] = useState<Record<DashboardCardId, DashboardCardSize>>(
+    DEFAULT_DASHBOARD_CARD_SIZES
+  );
+  const [historyVisibleMetrics, setHistoryVisibleMetrics] = useState<HistoryMetricKey[]>([
+    'tempC',
+    'humidityPct',
+    'windSpeedMs'
+  ]);
+  const [historyPointLimit, setHistoryPointLimit] = useState<number>(240);
+  const [historySmoothing, setHistorySmoothing] = useState<'raw' | 'smooth'>('smooth');
+  const [historyShowPoints, setHistoryShowPoints] = useState<boolean>(true);
+  const [customViewPresets, setCustomViewPresets] = useState<DashboardViewPreset[]>([]);
+  const [activeViewPresetId, setActiveViewPresetId] = useState<string>('');
+  const [newPresetName, setNewPresetName] = useState<string>('');
   const [radarFrames, setRadarFrames] = useState<RadarFrame[]>([]);
   const [radarHours, setRadarHours] = useState<1 | 3 | 6 | 12>(3);
   const [radarFrameDensity, setRadarFrameDensity] = useState<RadarFrameDensity>('normal');
@@ -526,6 +650,119 @@ export function App(): JSX.Element {
         // Ignore malformed collapsed dashboard cards
       }
     }
+
+    const savedDashboardCardSizes = window.localStorage.getItem(DASHBOARD_CARD_SIZES_STORAGE_KEY);
+    if (savedDashboardCardSizes) {
+      try {
+        const parsed = JSON.parse(savedDashboardCardSizes) as Partial<Record<DashboardCardId, DashboardCardSize>>;
+        setDashboardCardSizes({
+          ...DEFAULT_DASHBOARD_CARD_SIZES,
+          ...Object.fromEntries(
+            Object.entries(parsed).filter(
+              ([key, value]) =>
+                DEFAULT_DASHBOARD_CARD_ORDER.includes(key as DashboardCardId) &&
+                (value === 'sm' || value === 'md' || value === 'lg')
+            )
+          )
+        } as Record<DashboardCardId, DashboardCardSize>);
+      } catch {
+        // Ignore malformed dashboard card sizes
+      }
+    }
+
+    const savedHistoryVisibleMetrics = window.localStorage.getItem(HISTORY_VISIBLE_METRICS_STORAGE_KEY);
+    if (savedHistoryVisibleMetrics) {
+      try {
+        const parsed = JSON.parse(savedHistoryVisibleMetrics) as HistoryMetricKey[];
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter((item): item is HistoryMetricKey => ALL_HISTORY_METRICS.includes(item));
+          if (valid.length > 0) {
+            setHistoryVisibleMetrics(Array.from(new Set(valid)));
+          }
+        }
+      } catch {
+        // Ignore malformed history metric preferences
+      }
+    }
+
+    const savedHistoryPointLimit = window.localStorage.getItem(HISTORY_POINT_LIMIT_STORAGE_KEY);
+    if (savedHistoryPointLimit) {
+      const parsed = Number(savedHistoryPointLimit);
+      if (Number.isFinite(parsed) && parsed >= 24 && parsed <= 720) {
+        setHistoryPointLimit(Math.floor(parsed));
+      }
+    }
+
+    const savedHistorySmoothing = window.localStorage.getItem(HISTORY_SMOOTHING_STORAGE_KEY);
+    if (savedHistorySmoothing === 'raw' || savedHistorySmoothing === 'smooth') {
+      setHistorySmoothing(savedHistorySmoothing);
+    }
+
+    const savedHistoryShowPoints = window.localStorage.getItem(HISTORY_SHOW_POINTS_STORAGE_KEY);
+    if (savedHistoryShowPoints === 'true' || savedHistoryShowPoints === 'false') {
+      setHistoryShowPoints(savedHistoryShowPoints === 'true');
+    }
+
+    const savedEssentialMode = window.localStorage.getItem(ESSENTIAL_MODE_STORAGE_KEY);
+    if (savedEssentialMode === 'true' || savedEssentialMode === 'false') {
+      setEssentialMode(savedEssentialMode === 'true');
+    }
+
+    const savedCustomViewPresets = window.localStorage.getItem(DASHBOARD_VIEW_PRESETS_STORAGE_KEY);
+    if (savedCustomViewPresets) {
+      try {
+        const parsed = JSON.parse(savedCustomViewPresets) as DashboardViewPreset[];
+        if (Array.isArray(parsed)) {
+          const valid: DashboardViewPreset[] = parsed
+            .filter((item): item is DashboardViewPreset =>
+              Boolean(item?.id) && Boolean(item?.name) && item.unitSystem !== undefined
+            )
+            .map((item) => {
+              const normalizedMetrics =
+                item.visibleHistoryMetrics?.filter((metric) => ALL_HISTORY_METRICS.includes(metric)) ??
+                ['tempC', 'windSpeedMs'];
+
+              return {
+                id: item.id,
+                name: item.name,
+                cardSizes: {
+                  ...DEFAULT_DASHBOARD_CARD_SIZES,
+                  ...(item.cardSizes ?? {})
+                },
+                visibleHistoryMetrics: normalizedMetrics,
+                historyPointLimit: Math.min(720, Math.max(24, Math.floor(item.historyPointLimit ?? 240))),
+                historySmoothing: item.historySmoothing === 'raw' ? 'raw' : 'smooth',
+                historyShowPoints: Boolean(item.historyShowPoints),
+                unitSystem: item.unitSystem === 'metric' ? 'metric' : 'imperial',
+                essentialMode: Boolean(item.essentialMode),
+                isBuiltIn: false
+              };
+            });
+
+          setCustomViewPresets(valid);
+        }
+      } catch {
+        // Ignore malformed custom presets
+      }
+    }
+
+    const savedActivePresetId = window.localStorage.getItem(DASHBOARD_ACTIVE_PRESET_ID_STORAGE_KEY);
+    if (savedActivePresetId) {
+      setActiveViewPresetId(savedActivePresetId);
+    }
+
+    const savedAlertPreferences = window.localStorage.getItem(ALERT_PREFERENCES_STORAGE_KEY);
+    if (savedAlertPreferences) {
+      try {
+        const parsed = JSON.parse(savedAlertPreferences) as Partial<AlertPreferences>;
+        setAlertPreferences({
+          ...DEFAULT_ALERT_PREFERENCES,
+          ...parsed
+        });
+      } catch {
+        // Ignore malformed alert preferences
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -588,6 +825,50 @@ export function App(): JSX.Element {
       JSON.stringify(collapsedDashboardCards)
     );
   }, [collapsedDashboardCards]);
+
+  useEffect(() => {
+    window.localStorage.setItem(DASHBOARD_CARD_SIZES_STORAGE_KEY, JSON.stringify(dashboardCardSizes));
+  }, [dashboardCardSizes]);
+
+  useEffect(() => {
+    window.localStorage.setItem(HISTORY_VISIBLE_METRICS_STORAGE_KEY, JSON.stringify(historyVisibleMetrics));
+  }, [historyVisibleMetrics]);
+
+  useEffect(() => {
+    window.localStorage.setItem(HISTORY_POINT_LIMIT_STORAGE_KEY, String(historyPointLimit));
+  }, [historyPointLimit]);
+
+  useEffect(() => {
+    window.localStorage.setItem(HISTORY_SMOOTHING_STORAGE_KEY, historySmoothing);
+  }, [historySmoothing]);
+
+  useEffect(() => {
+    window.localStorage.setItem(HISTORY_SHOW_POINTS_STORAGE_KEY, String(historyShowPoints));
+  }, [historyShowPoints]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ESSENTIAL_MODE_STORAGE_KEY, String(essentialMode));
+  }, [essentialMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      DASHBOARD_VIEW_PRESETS_STORAGE_KEY,
+      JSON.stringify(customViewPresets.filter((item) => !item.isBuiltIn))
+    );
+  }, [customViewPresets]);
+
+  useEffect(() => {
+    if (!activeViewPresetId) {
+      window.localStorage.removeItem(DASHBOARD_ACTIVE_PRESET_ID_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(DASHBOARD_ACTIVE_PRESET_ID_STORAGE_KEY, activeViewPresetId);
+  }, [activeViewPresetId]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ALERT_PREFERENCES_STORAGE_KEY, JSON.stringify(alertPreferences));
+  }, [alertPreferences]);
 
   useEffect(() => {
     if (!session) {
@@ -961,6 +1242,8 @@ export function App(): JSX.Element {
     enabled: boolean;
     intervalMinutes: number;
     endpoint: string | null;
+    apiKey?: string | null;
+    apiSecret?: string | null;
   }): Promise<void> {
     if (!session || session.user.role !== 'admin') {
       setProviderStatusState('forbidden-for-non-admin');
@@ -975,7 +1258,9 @@ export function App(): JSX.Element {
         provider: input.provider,
         enabled: input.enabled,
         intervalMinutes: input.intervalMinutes,
-        endpoint: input.endpoint
+        endpoint: input.endpoint,
+        apiKey: input.apiKey,
+        apiSecret: input.apiSecret
       });
 
       setProviderStatuses((previous) => {
@@ -1278,8 +1563,15 @@ export function App(): JSX.Element {
 
       await reloadStationHistory(selectedStationId);
       await refreshWeatherData();
-      setBackfillStatus(`Imported ${result.imported} observations (${result.days}d).`);
-      showToast('success', `Backfill complete: ${result.imported} observations imported.`);
+
+      if (result.imported > 0) {
+        setBackfillStatus(`Imported ${result.imported} observations (${result.days}d).`);
+        showToast('success', `Backfill complete: ${result.imported} observations imported.`);
+      } else {
+        const diagnostic = result.note ?? 'No upstream observations available for this station/source.';
+        setBackfillStatus(`No data imported (${result.days}d). ${diagnostic}`);
+        showToast('info', diagnostic);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Backfill failed.';
       setBackfillStatus(message);
@@ -1477,6 +1769,111 @@ export function App(): JSX.Element {
     return { label: 'Stale (>20m)', color: '#991b1b', background: '#fee2e2' };
   }, [selectedStationCurrent]);
 
+  const activeAlertSummaries = useMemo(() => {
+    if (!selectedStationCurrent || !alertPreferences.enabled) {
+      return [] as string[];
+    }
+
+    if (alertPreferences.quietHoursEnabled) {
+      const now = new Date();
+      const [startHour, startMinute] = alertPreferences.quietHoursStart.split(':').map((value) => Number(value));
+      const [endHour, endMinute] = alertPreferences.quietHoursEnd.split(':').map((value) => Number(value));
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const startMinutes = (Number.isFinite(startHour) ? startHour : 22) * 60 + (Number.isFinite(startMinute) ? startMinute : 0);
+      const endMinutes = (Number.isFinite(endHour) ? endHour : 6) * 60 + (Number.isFinite(endMinute) ? endMinute : 0);
+      const inQuietHours =
+        startMinutes <= endMinutes
+          ? nowMinutes >= startMinutes && nowMinutes < endMinutes
+          : nowMinutes >= startMinutes || nowMinutes < endMinutes;
+
+      if (inQuietHours && alertPreferences.severity === 'all') {
+        return ['Quiet hours active · non-critical alerts muted'];
+      }
+    }
+
+    const alerts: Array<{ level: 'elevated' | 'critical'; message: string }> = [];
+
+    if (selectedStationCurrent.tempC !== null && selectedStationCurrent.tempC !== undefined) {
+      if (selectedStationCurrent.tempC >= alertPreferences.tempHighC + 3) {
+        alerts.push({ level: 'critical', message: `Critical heat risk (${selectedStationCurrent.tempC.toFixed(1)}°C)` });
+      } else if (selectedStationCurrent.tempC >= alertPreferences.tempHighC) {
+        alerts.push({ level: 'elevated', message: `High temperature threshold exceeded (${selectedStationCurrent.tempC.toFixed(1)}°C)` });
+      }
+
+      if (selectedStationCurrent.tempC <= alertPreferences.tempLowC - 3) {
+        alerts.push({ level: 'critical', message: `Critical cold risk (${selectedStationCurrent.tempC.toFixed(1)}°C)` });
+      } else if (selectedStationCurrent.tempC <= alertPreferences.tempLowC) {
+        alerts.push({ level: 'elevated', message: `Low temperature threshold exceeded (${selectedStationCurrent.tempC.toFixed(1)}°C)` });
+      }
+    }
+
+    if (selectedStationCurrent.windSpeedMs !== null && selectedStationCurrent.windSpeedMs !== undefined) {
+      if (selectedStationCurrent.windSpeedMs >= alertPreferences.windHighMs + 8) {
+        alerts.push({ level: 'critical', message: `Critical wind risk (${selectedStationCurrent.windSpeedMs.toFixed(1)} m/s)` });
+      } else if (selectedStationCurrent.windSpeedMs >= alertPreferences.windHighMs) {
+        alerts.push({ level: 'elevated', message: `High wind threshold exceeded (${selectedStationCurrent.windSpeedMs.toFixed(1)} m/s)` });
+      }
+    }
+
+    const filtered =
+      alertPreferences.severity === 'critical'
+        ? alerts.filter((item) => item.level === 'critical')
+        : alertPreferences.severity === 'elevated'
+          ? alerts.filter((item) => item.level === 'elevated' || item.level === 'critical')
+          : alerts;
+
+    return filtered.map((item) => item.message);
+  }, [selectedStationCurrent, alertPreferences]);
+
+  const historyMetricsToRender: HistoryMetricKey[] = useMemo(() => {
+    const essentials: HistoryMetricKey[] = ['tempC', 'windSpeedMs'];
+
+    if (essentialMode) {
+      const selected = historyVisibleMetrics.filter((metric): metric is HistoryMetricKey => essentials.includes(metric));
+      return selected.length > 0 ? selected : essentials;
+    }
+
+    const selected = historyVisibleMetrics.filter((metric): metric is HistoryMetricKey =>
+      ALL_HISTORY_METRICS.includes(metric)
+    );
+
+    return selected.length > 0 ? selected : ['tempC', 'humidityPct', 'windSpeedMs'];
+  }, [essentialMode, historyVisibleMetrics]);
+
+  function getCardBodyMinHeight(cardId: DashboardCardId): number {
+    const size = dashboardCardSizes[cardId] ?? DEFAULT_DASHBOARD_CARD_SIZES[cardId];
+
+    if (size === 'sm') {
+      return cardId === 'map' || cardId === 'history' ? 320 : 180;
+    }
+
+    if (size === 'lg') {
+      return cardId === 'map' || cardId === 'history' ? 560 : 300;
+    }
+
+    return cardId === 'map' || cardId === 'history' ? 440 : 240;
+  }
+
+  function getHistoryMetricLabel(metric: HistoryMetricKey): string {
+    if (metric === 'tempC') {
+      return 'Temperature';
+    }
+
+    if (metric === 'humidityPct') {
+      return 'Humidity';
+    }
+
+    if (metric === 'windSpeedMs') {
+      return 'Wind';
+    }
+
+    if (metric === 'pressureHpa') {
+      return 'Pressure';
+    }
+
+    return 'Precipitation';
+  }
+
   function formatKpiMetric(label: string, value: string): JSX.Element {
     return (
       <div
@@ -1528,6 +1925,16 @@ export function App(): JSX.Element {
     history: 'History chart'
   };
 
+  const allViewPresets = useMemo(
+    () => [...BUILT_IN_VIEW_PRESETS, ...customViewPresets],
+    [customViewPresets]
+  );
+
+  const activeCustomViewPreset = useMemo(
+    () => customViewPresets.find((item) => item.id === activeViewPresetId) ?? null,
+    [customViewPresets, activeViewPresetId]
+  );
+
   function toggleDashboardCardVisibility(cardId: DashboardCardId): void {
     setHiddenDashboardCards((previous) =>
       previous.includes(cardId)
@@ -1563,6 +1970,138 @@ export function App(): JSX.Element {
         ? previous.filter((item) => item !== cardId)
         : [...previous, cardId]
     );
+  }
+
+  function toggleHistoryMetric(metric: HistoryMetricKey): void {
+    setHistoryVisibleMetrics((previous) => {
+      if (previous.includes(metric)) {
+        const next = previous.filter((item) => item !== metric);
+        return next.length > 0 ? next : [metric];
+      }
+
+      return [...previous, metric];
+    });
+  }
+
+  function applyViewPreset(preset: DashboardViewPreset): void {
+    const normalizedMetrics = Array.from(
+      new Set(preset.visibleHistoryMetrics.filter((metric) => ALL_HISTORY_METRICS.includes(metric)))
+    );
+
+    setDashboardCardSizes({
+      ...DEFAULT_DASHBOARD_CARD_SIZES,
+      ...preset.cardSizes
+    });
+    setHistoryVisibleMetrics(normalizedMetrics.length > 0 ? normalizedMetrics : ['tempC', 'windSpeedMs']);
+    setHistoryPointLimit(Math.min(720, Math.max(24, Math.floor(preset.historyPointLimit))));
+    setHistorySmoothing(preset.historySmoothing === 'raw' ? 'raw' : 'smooth');
+    setHistoryShowPoints(Boolean(preset.historyShowPoints));
+    setUnitSystem(preset.unitSystem === 'metric' ? 'metric' : 'imperial');
+    setEssentialMode(Boolean(preset.essentialMode));
+    setActiveViewPresetId(preset.id);
+    showToast('success', `Applied preset: ${preset.name}`);
+  }
+
+  function saveCurrentViewAsPreset(): void {
+    const trimmedName = newPresetName.trim();
+
+    if (!trimmedName) {
+      showToast('info', 'Enter a preset name first.');
+      return;
+    }
+
+    const nextPreset: DashboardViewPreset = {
+      id: `custom-${Date.now()}`,
+      name: trimmedName,
+      cardSizes: dashboardCardSizes,
+      visibleHistoryMetrics: historyVisibleMetrics,
+      historyPointLimit,
+      historySmoothing,
+      historyShowPoints,
+      unitSystem,
+      essentialMode,
+      isBuiltIn: false
+    };
+
+    setCustomViewPresets((previous) => [...previous, nextPreset].slice(-8));
+    setActiveViewPresetId(nextPreset.id);
+    setNewPresetName('');
+    showToast('success', `Saved preset: ${trimmedName}`);
+  }
+
+  function overwriteActiveCustomPreset(): void {
+    if (!activeCustomViewPreset) {
+      showToast('info', 'Select a custom preset to overwrite.');
+      return;
+    }
+
+    const trimmedName = newPresetName.trim();
+    const nextName = trimmedName || activeCustomViewPreset.name;
+
+    setCustomViewPresets((previous) =>
+      previous.map((item) =>
+        item.id === activeCustomViewPreset.id
+          ? {
+              ...item,
+              name: nextName,
+              cardSizes: dashboardCardSizes,
+              visibleHistoryMetrics: historyVisibleMetrics,
+              historyPointLimit,
+              historySmoothing,
+              historyShowPoints,
+              unitSystem,
+              essentialMode,
+              isBuiltIn: false
+            }
+          : item
+      )
+    );
+
+    setNewPresetName('');
+    showToast('success', `Overwrote preset: ${nextName}`);
+  }
+
+  function deleteCustomPreset(presetId: string): void {
+    setCustomViewPresets((previous) => previous.filter((item) => item.id !== presetId));
+    setActiveViewPresetId((previous) => (previous === presetId ? '' : previous));
+    showToast('info', 'Deleted custom preset.');
+  }
+
+  function exportSelectedHistoryCsv(): void {
+    if (!selectedStation) {
+      showToast('info', 'Select a station first to export history.');
+      return;
+    }
+
+    if (selectedStationHistory.length === 0) {
+      showToast('info', 'No station history available to export yet.');
+      return;
+    }
+
+    const rows = [
+      ['observedAt', 'tempC', 'humidityPct', 'windSpeedMs', 'pressureHpa', 'precipMm'],
+      ...selectedStationHistory.map((item) => [
+        item.observedAt,
+        item.tempC ?? '',
+        item.humidityPct ?? '',
+        item.windSpeedMs ?? '',
+        item.pressureHpa ?? '',
+        item.precipMm ?? ''
+      ])
+    ];
+
+    const csv = rows
+      .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${selectedStation.provider}-${selectedStation.externalId}-history.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    showToast('success', 'Exported station history CSV.');
   }
 
   async function handleQuickAddStation(): Promise<void> {
@@ -1813,7 +2352,7 @@ export function App(): JSX.Element {
     <main
       style={{
         fontFamily: 'system-ui, sans-serif',
-        padding: 24,
+        padding: essentialMode ? 12 : 24,
         minHeight: '100vh',
         background: darkMode
           ? 'radial-gradient(circle at top, #1e293b 0%, #0f172a 55%, #020617 100%)'
@@ -2013,9 +2552,11 @@ export function App(): JSX.Element {
           <h1 className="wx-header-title">wxmap</h1>
           <SessionBadge session={session} />
         </div>
-        <p className="wx-subtitle">
-          Explore real-time weather with animated radar, provider controls, and customizable map views.
-        </p>
+        {!essentialMode ? (
+          <p className="wx-subtitle">
+            Explore real-time weather with animated radar, provider controls, and customizable map views.
+          </p>
+        ) : null}
         <p style={{ marginTop: 0, color: 'var(--wx-muted, #475569)' }}>
           Backend status: <strong style={{ color: 'var(--wx-accent, #2563eb)' }}>{health}</strong>
         </p>
@@ -2058,6 +2599,15 @@ export function App(): JSX.Element {
               <option value="elevated">Elevated</option>
               <option value="neo">Neo</option>
             </select>
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={essentialMode}
+              onChange={(event) => setEssentialMode(event.target.checked)}
+              aria-label="Toggle essential mode"
+            />
+            Essential mode
           </label>
         </div>
 
@@ -2136,6 +2686,79 @@ export function App(): JSX.Element {
           <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
             Customize dashboard layout
           </summary>
+          <div
+            style={{
+              marginTop: 10,
+              display: 'grid',
+              gap: 8,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+              alignItems: 'end'
+            }}
+          >
+            <label style={{ display: 'grid', gap: 4 }}>
+              View preset
+              <select
+                value={activeViewPresetId}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  if (!nextId) {
+                    setActiveViewPresetId('');
+                    return;
+                  }
+
+                  const preset = allViewPresets.find((item) => item.id === nextId);
+                  if (preset) {
+                    applyViewPreset(preset);
+                  }
+                }}
+                aria-label="Select dashboard view preset"
+              >
+                <option value="">Custom (current)</option>
+                {allViewPresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}{preset.isBuiltIn ? ' · built-in' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              Save current as
+              <input
+                value={newPresetName}
+                onChange={(event) => setNewPresetName(event.target.value)}
+                placeholder="My layout"
+                aria-label="New preset name"
+              />
+            </label>
+            <button type="button" onClick={saveCurrentViewAsPreset}>
+              Save preset
+            </button>
+            <button
+              type="button"
+              onClick={overwriteActiveCustomPreset}
+              disabled={!activeCustomViewPreset}
+              title={
+                activeCustomViewPreset
+                  ? 'Overwrite selected custom preset with current settings'
+                  : 'Select a custom preset first'
+              }
+            >
+              Overwrite preset
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const active = allViewPresets.find((item) => item.id === activeViewPresetId);
+                if (!active || active.isBuiltIn) {
+                  showToast('info', 'Select a custom preset to delete.');
+                  return;
+                }
+                deleteCustomPreset(active.id);
+              }}
+            >
+              Delete preset
+            </button>
+          </div>
           <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
             {dashboardCardOrder.map((cardId, index) => {
               const isHidden = hiddenDashboardCards.includes(cardId);
@@ -2163,6 +2786,21 @@ export function App(): JSX.Element {
                     {dashboardCardLabels[cardId]}
                   </label>
                   <div style={{ display: 'inline-flex', gap: 6 }}>
+                    <select
+                      aria-label={`Size ${dashboardCardLabels[cardId]}`}
+                      value={dashboardCardSizes[cardId] ?? 'md'}
+                      onChange={(event) =>
+                        setDashboardCardSizes((previous) => ({
+                          ...previous,
+                          [cardId]: event.target.value as DashboardCardSize
+                        }))
+                      }
+                      style={{ minWidth: 68 }}
+                    >
+                      <option value="sm">S</option>
+                      <option value="md">M</option>
+                      <option value="lg">L</option>
+                    </select>
                     <button
                       type="button"
                       onClick={() => moveDashboardCard(cardId, 'up')}
@@ -2244,6 +2882,7 @@ export function App(): JSX.Element {
                 weatherVisualTone={weatherVisualTone}
                 showWeatherAnimations={showWeatherAnimations}
                 showMiniCharts={showMiniCharts}
+                essentialMode={essentialMode}
                 historyChartMode={historyChartMode}
                 providerOptions={prioritizedProviderOptions}
                 visibleProviders={visibleProviders}
@@ -2255,6 +2894,7 @@ export function App(): JSX.Element {
                 onWeatherVisualToneChange={setWeatherVisualTone}
                 onShowWeatherAnimationsChange={setShowWeatherAnimations}
                 onShowMiniChartsChange={setShowMiniCharts}
+                onEssentialModeChange={setEssentialMode}
                 onHistoryChartModeChange={setHistoryChartMode}
                 onVisibleProvidersChange={(providers) => {
                   const deduped = Array.from(new Set(providers));
@@ -2303,6 +2943,74 @@ export function App(): JSX.Element {
                 <p>
                   History status: <strong>{historyStatus}</strong>
                 </p>
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: 8,
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                    marginBottom: 8
+                  }}
+                >
+                  <label style={{ display: 'grid', gap: 4 }}>
+                    History window
+                    <select
+                      value={historyPointLimit}
+                      onChange={(event) => setHistoryPointLimit(Number(event.target.value))}
+                    >
+                      <option value={96}>Last 8h (96 pts)</option>
+                      <option value={240}>Last 20h (240 pts)</option>
+                      <option value={480}>Last 40h (480 pts)</option>
+                      <option value={720}>Last 60h (720 pts)</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'grid', gap: 4 }}>
+                    Line style
+                    <select
+                      value={historySmoothing}
+                      onChange={(event) => setHistorySmoothing(event.target.value as 'raw' | 'smooth')}
+                    >
+                      <option value="smooth">Smooth</option>
+                      <option value="raw">Raw</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 20 }}>
+                    <input
+                      type="checkbox"
+                      checked={historyShowPoints}
+                      onChange={(event) => setHistoryShowPoints(event.target.checked)}
+                    />
+                    Show point markers
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+                  {ALL_HISTORY_METRICS.map((metric) => {
+                    const active = historyVisibleMetrics.includes(metric);
+                    return (
+                      <button
+                        key={`metric-toggle-${metric}`}
+                        type="button"
+                        onClick={() => toggleHistoryMetric(metric)}
+                        aria-pressed={active}
+                        style={{
+                          borderColor: active ? 'var(--wx-accent, #2563eb)' : undefined,
+                          color: active ? 'var(--wx-accent, #2563eb)' : undefined
+                        }}
+                      >
+                        {active ? '✓ ' : ''}{getHistoryMetricLabel(metric)}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => setUnitSystem((previous) => (previous === 'imperial' ? 'metric' : 'imperial'))}
+                    title="Toggle units for chart labels and values"
+                  >
+                    Units: {unitSystem === 'imperial' ? 'Imperial' : 'Metric'}
+                  </button>
+                  <button type="button" onClick={exportSelectedHistoryCsv}>
+                    Export CSV
+                  </button>
+                </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
                   <button
                     type="button"
@@ -2331,51 +3039,22 @@ export function App(): JSX.Element {
                 {selectedStation ? (
                   <>
                   <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-                    <StationHistoryChart
-                      stationName={selectedStation.name}
-                      observations={selectedStationHistory}
-                      metric="tempC"
-                      unitSystem={unitSystem}
-                      chartMode={historyChartMode}
-                      weatherVisualTone={weatherVisualTone}
-                      animated={showWeatherAnimations}
-                    />
-                    <StationHistoryChart
-                      stationName={selectedStation.name}
-                      observations={selectedStationHistory}
-                      metric="humidityPct"
-                      unitSystem={unitSystem}
-                      chartMode={historyChartMode}
-                      weatherVisualTone={weatherVisualTone}
-                      animated={showWeatherAnimations}
-                    />
-                    <StationHistoryChart
-                      stationName={selectedStation.name}
-                      observations={selectedStationHistory}
-                      metric="windSpeedMs"
-                      unitSystem={unitSystem}
-                      chartMode={historyChartMode}
-                      weatherVisualTone={weatherVisualTone}
-                      animated={showWeatherAnimations}
-                    />
-                    <StationHistoryChart
-                      stationName={selectedStation.name}
-                      observations={selectedStationHistory}
-                      metric="pressureHpa"
-                      unitSystem={unitSystem}
-                      chartMode={historyChartMode}
-                      weatherVisualTone={weatherVisualTone}
-                      animated={showWeatherAnimations}
-                    />
-                    <StationHistoryChart
-                      stationName={selectedStation.name}
-                      observations={selectedStationHistory}
-                      metric="precipMm"
-                      unitSystem={unitSystem}
-                      chartMode={historyChartMode}
-                      weatherVisualTone={weatherVisualTone}
-                      animated={showWeatherAnimations}
-                    />
+                    {historyMetricsToRender.map((metric) => (
+                      <StationHistoryChart
+                        key={`history-chart-${metric}`}
+                        stationName={selectedStation.name}
+                        observations={selectedStationHistory}
+                        metric={metric}
+                        unitSystem={unitSystem}
+                        chartMode={historyChartMode}
+                        weatherVisualTone={weatherVisualTone}
+                        animated={showWeatherAnimations}
+                        maxPoints={historyPointLimit}
+                        showPoints={historyShowPoints}
+                        smoothing={historySmoothing}
+                        height={dashboardCardSizes.history === 'lg' ? 360 : dashboardCardSizes.history === 'sm' ? 220 : 280}
+                      />
+                    ))}
                   </div>
                   <section
                     aria-label="Recent station observations table"
@@ -2451,7 +3130,18 @@ export function App(): JSX.Element {
                   {isCollapsed ? '▾' : '▴'}
                 </button>
               </div>
-              {!isCollapsed ? <div className="wx-card-body">{content}</div> : null}
+              {!isCollapsed ? (
+                <div
+                  className="wx-card-body"
+                  style={{
+                    minHeight: getCardBodyMinHeight(cardId),
+                    resize: cardId === 'map' || cardId === 'history' ? 'vertical' : 'none',
+                    overflow: 'auto'
+                  }}
+                >
+                  {content}
+                </div>
+              ) : null}
             </section>
           );
         })}

@@ -75,6 +75,8 @@ export type AdminProviderStatus = {
   enabled: boolean;
   intervalMinutes: number;
   endpoint?: string | null;
+  hasApiKey?: boolean;
+  hasApiSecret?: boolean;
   updatedAt?: string;
   state: 'idle' | 'running' | 'ok' | 'error';
   lastSyncAt: string | null;
@@ -135,6 +137,8 @@ export type StationBackfillResult = {
   externalId: string;
   days: number;
   imported: number;
+  sourceStatus?: 'ok' | 'no-data';
+  note?: string | null;
 };
 
 export type UserPreferences = {
@@ -493,6 +497,8 @@ export async function updateAdminProviderConfig(input: {
   enabled?: boolean;
   intervalMinutes?: number;
   endpoint?: string | null;
+  apiKey?: string | null;
+  apiSecret?: string | null;
 }): Promise<AdminProviderStatus> {
   const body: Record<string, boolean | number | string | null> = {};
 
@@ -506,6 +512,14 @@ export async function updateAdminProviderConfig(input: {
 
   if (input.endpoint !== undefined) {
     body.endpoint = input.endpoint;
+  }
+
+  if (input.apiKey !== undefined) {
+    body.apiKey = input.apiKey;
+  }
+
+  if (input.apiSecret !== undefined) {
+    body.apiSecret = input.apiSecret;
   }
 
   const response = await fetch(`${apiBaseUrl}/admin/providers/${encodeURIComponent(input.provider)}`, {
