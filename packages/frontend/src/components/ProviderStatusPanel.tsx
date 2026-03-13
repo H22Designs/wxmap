@@ -53,6 +53,22 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString();
 }
 
+function getStateBadge(state: AdminProviderStatus['state']): { color: string; background: string } {
+  if (state === 'ok') {
+    return { color: '#166534', background: '#dcfce7' };
+  }
+
+  if (state === 'running') {
+    return { color: '#1e3a8a', background: '#dbeafe' };
+  }
+
+  if (state === 'error') {
+    return { color: '#991b1b', background: '#fee2e2' };
+  }
+
+  return { color: '#374151', background: '#f3f4f6' };
+}
+
 export function ProviderStatusPanel({
   status,
   providers,
@@ -111,27 +127,48 @@ export function ProviderStatusPanel({
         <p>No provider statuses available yet.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
             <thead>
               <tr>
-                <th align="left">Provider</th>
-                <th align="left">Enabled</th>
-                <th align="left">State</th>
-                <th align="left">Interval</th>
-                <th align="left">Endpoint</th>
-                <th align="left">Last Sync</th>
-                <th align="left">Next Sync</th>
-                <th align="left">Actions</th>
+                <th align="left" style={{ padding: '8px 8px' }}>Provider</th>
+                <th align="left" style={{ padding: '8px 8px' }}>Enabled</th>
+                <th align="left" style={{ padding: '8px 8px' }}>State</th>
+                <th align="left" style={{ padding: '8px 8px' }}>Interval</th>
+                <th align="left" style={{ padding: '8px 8px' }}>Endpoint</th>
+                <th align="left" style={{ padding: '8px 8px' }}>Last Sync</th>
+                <th align="left" style={{ padding: '8px 8px' }}>Next Sync</th>
+                <th align="left" style={{ padding: '8px 8px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {providers.map((item) => (
-                <tr key={item.provider}>
-                  <td style={{ padding: '4px 0' }}>
+              {providers.map((item, index) => {
+                const stateBadge = getStateBadge(item.state);
+
+                return (
+                <tr
+                  key={item.provider}
+                  style={{
+                    background: index % 2 === 0 ? 'var(--wx-surface, #ffffff)' : 'var(--wx-surface-strong, #f8fafc)'
+                  }}
+                >
+                  <td style={{ padding: '8px 8px' }}>
                     <code>{item.provider}</code>
                   </td>
-                  <td>{item.enabled ? 'Yes' : 'No'}</td>
-                  <td>{item.state}</td>
+                  <td style={{ padding: '8px 8px' }}>{item.enabled ? 'Yes' : 'No'}</td>
+                  <td style={{ padding: '8px 8px' }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        borderRadius: 999,
+                        padding: '2px 8px',
+                        fontWeight: 700,
+                        color: stateBadge.color,
+                        background: stateBadge.background
+                      }}
+                    >
+                      {item.state}
+                    </span>
+                  </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -200,8 +237,8 @@ export function ProviderStatusPanel({
                       style={{ minWidth: 180 }}
                     />
                   </td>
-                  <td>{formatDate(item.lastSyncAt)}</td>
-                  <td>{formatDate(item.nextSyncAt)}</td>
+                  <td style={{ padding: '8px 8px' }}>{formatDate(item.lastSyncAt)}</td>
+                  <td style={{ padding: '8px 8px' }}>{formatDate(item.nextSyncAt)}</td>
                   <td>
                     <div style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
@@ -230,7 +267,7 @@ export function ProviderStatusPanel({
                     </div>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
