@@ -524,6 +524,8 @@ const broadcaster = new RealtimeBroadcaster(httpServer);
 const collectorService = new CollectorService({
   providerConfigRepository,
   providerStatusStore,
+  stationRepository,
+  observationRepository,
   onProviderCycleCompleted: (status) => {
     broadcaster.broadcast('collector.provider-sync', { ...status });
   }

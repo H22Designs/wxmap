@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import type { AccessTokenPayload } from '../auth/tokens.js';
 import { requireAuthenticatedUser } from '../middleware/requireAuthenticatedUser.js';
 import { fetchLatestCwopLikeObservation } from '../services/cwopObservation.js';
+import { fetchBackfillObservationsForStation } from '../services/providerObservations.js';
 import {
   resolveProviderStationCandidate,
   listProviderStationCandidates
@@ -395,6 +396,77 @@ export function weatherRouter(deps: WeatherRouterDeps): Router {
     await hydrateLatestObservationIfAvailable(created as { id: string; provider: string; externalId: string });
 
     res.status(201).json(created);
+  });
+
+  router.post('/stations/:id/backfill', requireAuthenticatedUser, async (req, res) => {
+    const auth = getAuthPayload(res);
+
+    if (!auth) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    if (typeof deps.observationRepository.upsertObservation !== 'function') {
+      res.status(501).json({ error: 'Backfill is unavailable: observation upsert not supported by current store.' });
+      return;
+    }
+
+    const stationId = String(req.params.id ?? '').trim();
+    const station = deps.stationRepository.getStationById(stationId) as
+      | {
+          id: string;
+          provider: string;
+          externalId: string;
+          name: string;
+          lat: number;
+          lng: number;
+          elevationM: number | null;
+          active: boolean;
+          createdAt: string;
+        }
+      | null;
+
+    if (!station) {
+      res.status(404).json({ error: `Station '${stationId}' not found` });
+      return;
+    }
+
+    const rawDays = Number(req.body?.days ?? 5);
+    const days = Number.isFinite(rawDays) ? Math.floor(rawDays) : NaN;
+
+    if (!Number.isFinite(days) || days < 1 || days > 14) {
+      res.status(400).json({ error: 'days must be an integer between 1 and 14' });
+      return;
+    }
+
+    const samples = await fetchBackfillObservationsForStation({
+      station,
+      days,
+      config: deps.getProviderLookupConfig?.(station.provider) ?? null
+    });
+
+    for (const sample of samples) {
+      deps.observationRepository.upsertObservation({
+        id: `obs-${station.id}-${sample.observedAt}`,
+        stationId: station.id,
+        observedAt: sample.observedAt,
+        tempC: sample.tempC,
+        humidityPct: sample.humidityPct,
+        pressureHpa: sample.pressureHpa,
+        windSpeedMs: sample.windSpeedMs,
+        windDirDeg: sample.windDirDeg,
+        precipMm: sample.precipMm,
+        rawJson: sample.rawJson
+      });
+    }
+
+    res.status(200).json({
+      stationId: station.id,
+      provider: station.provider,
+      externalId: station.externalId,
+      days,
+      imported: samples.length
+    });
   });
 
   router.get('/stations/:id/observations', (req, res) => {

@@ -27,7 +27,8 @@ import {
   type RadarFrameDensity,
   type Station,
   type UserPreferences,
-  updateUserPreferences
+  updateUserPreferences,
+  triggerStationBackfill
 } from './services/api';
 import { AdminSettingsPanel } from './components/AdminSettingsPanel';
 import { AuthPanel } from './components/AuthPanel';
@@ -162,6 +163,8 @@ export function App(): JSX.Element {
   const [isQuickLookupRunning, setIsQuickLookupRunning] = useState<boolean>(false);
   const [selectedStationHistory, setSelectedStationHistory] = useState<Observation[]>([]);
   const [historyStatus, setHistoryStatus] = useState<string>('no-station-selected');
+  const [backfillStatus, setBackfillStatus] = useState<string>('idle');
+  const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -1223,6 +1226,19 @@ export function App(): JSX.Element {
     }
   }, [filteredStations, selectedStationId]);
 
+  async function reloadStationHistory(stationId: string): Promise<void> {
+    setHistoryStatus('loading...');
+
+    try {
+      const items = await fetchStationObservations({ stationId, limit: 240 });
+      setSelectedStationHistory(items);
+      setHistoryStatus(items.length > 0 ? `loaded (${items.length} points)` : 'empty');
+    } catch {
+      setSelectedStationHistory([]);
+      setHistoryStatus('error');
+    }
+  }
+
   useEffect(() => {
     if (!selectedStationId) {
       setSelectedStationHistory([]);
@@ -1230,18 +1246,46 @@ export function App(): JSX.Element {
       return;
     }
 
-    setHistoryStatus('loading...');
-
-    void fetchStationObservations({ stationId: selectedStationId, limit: 72 })
-      .then((items) => {
-        setSelectedStationHistory(items);
-        setHistoryStatus(items.length > 0 ? `loaded (${items.length} points)` : 'empty');
-      })
-      .catch(() => {
-        setSelectedStationHistory([]);
-        setHistoryStatus('error');
-      });
+    void reloadStationHistory(selectedStationId);
   }, [selectedStationId]);
+
+  async function handleBackfillStation(days: 5 | 10): Promise<void> {
+    if (!session) {
+      showToast('error', 'Please log in to backfill station history.');
+      return;
+    }
+
+    if (!selectedStationId) {
+      showToast('info', 'Select a station first to run backfill.');
+      return;
+    }
+
+    if (isBackfilling) {
+      return;
+    }
+
+    setIsBackfilling(true);
+    setBackfillStatus(`Backfilling ${days} days...`);
+
+    try {
+      const result = await triggerStationBackfill({
+        accessToken: session.accessToken,
+        stationId: selectedStationId,
+        days
+      });
+
+      await reloadStationHistory(selectedStationId);
+      await refreshWeatherData();
+      setBackfillStatus(`Imported ${result.imported} observations (${result.days}d).`);
+      showToast('success', `Backfill complete: ${result.imported} observations imported.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Backfill failed.';
+      setBackfillStatus(message);
+      showToast('error', 'Backfill failed for this station/source.');
+    } finally {
+      setIsBackfilling(false);
+    }
+  }
 
   const selectedStation = useMemo(
     () => stations.find((station) => station.id === selectedStationId) ?? null,
@@ -2181,6 +2225,31 @@ export function App(): JSX.Element {
                 <p>
                   History status: <strong>{historyStatus}</strong>
                 </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleBackfillStation(5);
+                    }}
+                    disabled={!session || !selectedStation || isBackfilling}
+                    title={!session ? 'Login required' : 'Backfill 5 days of history for selected station'}
+                  >
+                    {isBackfilling ? 'Backfilling...' : 'Backfill 5d'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleBackfillStation(10);
+                    }}
+                    disabled={!session || !selectedStation || isBackfilling}
+                    title={!session ? 'Login required' : 'Backfill 10 days of history for selected station'}
+                  >
+                    {isBackfilling ? 'Backfilling...' : 'Backfill 10d'}
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--wx-muted, #475569)' }}>
+                    Backfill status: <strong>{backfillStatus}</strong>
+                  </span>
+                </div>
                 {selectedStation ? (
                   <>
                   <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>

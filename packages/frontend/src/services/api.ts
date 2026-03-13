@@ -129,6 +129,14 @@ export type RadarFrame = {
   tileUrl: string;
 };
 
+export type StationBackfillResult = {
+  stationId: string;
+  provider: string;
+  externalId: string;
+  days: number;
+  imported: number;
+};
+
 export type UserPreferences = {
   userId: string;
   darkMode: boolean;
@@ -300,6 +308,34 @@ export async function fetchStationObservations(input: {
 
   const payload = (await response.json()) as StationObservationsResponse;
   return payload.items;
+}
+
+export async function triggerStationBackfill(input: {
+  accessToken: string;
+  stationId: string;
+  days: number;
+}): Promise<StationBackfillResult> {
+  const response = await fetch(
+    `${apiBaseUrl}/weather/stations/${encodeURIComponent(input.stationId)}/backfill`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ days: input.days })
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new HttpStatusError(
+      errorText || `Station backfill request failed with status ${response.status}`,
+      response.status
+    );
+  }
+
+  return (await response.json()) as StationBackfillResult;
 }
 
 export async function fetchRadarFrames(input: {
