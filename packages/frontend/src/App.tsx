@@ -2176,31 +2176,116 @@ export function App(): JSX.Element {
                   current={selectedStationCurrent}
                   history={selectedStationHistory}
                   unitSystem={unitSystem}
+                  showMiniCharts={showMiniCharts}
                 />
                 <p>
                   History status: <strong>{historyStatus}</strong>
                 </p>
                 {selectedStation ? (
+                  <>
                   <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
                     <StationHistoryChart
                       stationName={selectedStation.name}
                       observations={selectedStationHistory}
                       metric="tempC"
                       unitSystem={unitSystem}
+                      chartMode={historyChartMode}
+                      weatherVisualTone={weatherVisualTone}
+                      animated={showWeatherAnimations}
                     />
                     <StationHistoryChart
                       stationName={selectedStation.name}
                       observations={selectedStationHistory}
                       metric="humidityPct"
                       unitSystem={unitSystem}
+                      chartMode={historyChartMode}
+                      weatherVisualTone={weatherVisualTone}
+                      animated={showWeatherAnimations}
                     />
                     <StationHistoryChart
                       stationName={selectedStation.name}
                       observations={selectedStationHistory}
                       metric="windSpeedMs"
                       unitSystem={unitSystem}
+                      chartMode={historyChartMode}
+                      weatherVisualTone={weatherVisualTone}
+                      animated={showWeatherAnimations}
+                    />
+                    <StationHistoryChart
+                      stationName={selectedStation.name}
+                      observations={selectedStationHistory}
+                      metric="pressureHpa"
+                      unitSystem={unitSystem}
+                      chartMode={historyChartMode}
+                      weatherVisualTone={weatherVisualTone}
+                      animated={showWeatherAnimations}
+                    />
+                    <StationHistoryChart
+                      stationName={selectedStation.name}
+                      observations={selectedStationHistory}
+                      metric="precipMm"
+                      unitSystem={unitSystem}
+                      chartMode={historyChartMode}
+                      weatherVisualTone={weatherVisualTone}
+                      animated={showWeatherAnimations}
                     />
                   </div>
+                  <section
+                    aria-label="Recent station observations table"
+                    style={{
+                      marginTop: 12,
+                      border: '1px solid var(--wx-border, #d1d5db)',
+                      borderRadius: 12,
+                      background: 'var(--wx-surface, #ffffff)',
+                      overflow: 'auto'
+                    }}
+                  >
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--wx-surface-strong, #f8fafc)' }}>
+                          <th style={{ textAlign: 'left', padding: '8px 10px' }}>Observed</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px' }}>Temp</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px' }}>Humidity</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px' }}>Wind</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px' }}>Pressure</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px' }}>Precip</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedStationHistory.slice(0, 16).map((item) => {
+                          const tempLabel = item.tempC === null
+                            ? 'N/A'
+                            : unitSystem === 'imperial'
+                              ? `${(item.tempC * 9 / 5 + 32).toFixed(1)} °F`
+                              : `${item.tempC.toFixed(1)} °C`;
+
+                          const windLabel = item.windSpeedMs === null
+                            ? 'N/A'
+                            : unitSystem === 'imperial'
+                              ? `${(item.windSpeedMs * 2.23693629).toFixed(1)} mph`
+                              : `${item.windSpeedMs.toFixed(1)} m/s`;
+
+                          const precipLabel = item.precipMm === null
+                            ? 'N/A'
+                            : unitSystem === 'imperial'
+                              ? `${(item.precipMm / 25.4).toFixed(2)} in`
+                              : `${item.precipMm.toFixed(2)} mm`;
+
+                          return (
+                            <tr key={item.id} style={{ borderTop: '1px solid var(--wx-border, #d1d5db)' }}>
+                              <td style={{ padding: '8px 10px' }}>{new Date(item.observedAt).toLocaleString()}</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right' }}>{tempLabel}</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right' }}>{item.humidityPct === null ? 'N/A' : `${item.humidityPct.toFixed(0)} %`}</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right' }}>{windLabel}</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right' }}>{item.pressureHpa === null ? 'N/A' : `${item.pressureHpa.toFixed(1)} hPa`}</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right' }}>{precipLabel}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </section>
+                  </>
                 ) : null}
               </div>
             );

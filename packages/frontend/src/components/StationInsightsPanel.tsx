@@ -8,6 +8,7 @@ type StationInsightsPanelProps = {
   current: CurrentObservation | undefined;
   history: Observation[];
   unitSystem: UnitSystem;
+  showMiniCharts?: boolean;
 };
 
 type TileProps = {
@@ -167,7 +168,13 @@ function WindDirectionDial({ degrees }: { degrees: number | null }): JSX.Element
   );
 }
 
-export function StationInsightsPanel({ station, current, history, unitSystem }: StationInsightsPanelProps): JSX.Element {
+export function StationInsightsPanel({
+  station,
+  current,
+  history,
+  unitSystem,
+  showMiniCharts = true
+}: StationInsightsPanelProps): JSX.Element {
   const recent = [...history].slice(0, 48).reverse();
 
   const tempSeries = buildSeries(recent, (item) => {
@@ -218,10 +225,10 @@ export function StationInsightsPanel({ station, current, history, unitSystem }: 
       </div>
 
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-        <Tile label="Temperature" value={formatTemp(current?.tempC ?? null, unitSystem)} icon="🌡️" chart={<Sparkline values={tempSeries} stroke="#ef4444" />} />
-        <Tile label="Humidity" value={current?.humidityPct === null || current?.humidityPct === undefined ? 'N/A' : `${current.humidityPct.toFixed(0)} %`} icon="💧" chart={<Sparkline values={humiditySeries} stroke="#0ea5e9" />} />
-        <Tile label="Pressure" value={current?.pressureHpa === null || current?.pressureHpa === undefined ? 'N/A' : `${current.pressureHpa.toFixed(1)} hPa`} icon="🧭" chart={<Sparkline values={pressureSeries} stroke="#7c3aed" />} />
-        <Tile label="Wind speed" value={formatWind(current?.windSpeedMs ?? null, unitSystem)} icon="💨" chart={<Sparkline values={windSeries} stroke="#14b8a6" />} />
+        <Tile label="Temperature" value={formatTemp(current?.tempC ?? null, unitSystem)} icon="🌡️" chart={showMiniCharts ? <Sparkline values={tempSeries} stroke="#ef4444" /> : null} />
+        <Tile label="Humidity" value={current?.humidityPct === null || current?.humidityPct === undefined ? 'N/A' : `${current.humidityPct.toFixed(0)} %`} icon="💧" chart={showMiniCharts ? <Sparkline values={humiditySeries} stroke="#0ea5e9" /> : null} />
+        <Tile label="Pressure" value={current?.pressureHpa === null || current?.pressureHpa === undefined ? 'N/A' : `${current.pressureHpa.toFixed(1)} hPa`} icon="🧭" chart={showMiniCharts ? <Sparkline values={pressureSeries} stroke="#7c3aed" /> : null} />
+        <Tile label="Wind speed" value={formatWind(current?.windSpeedMs ?? null, unitSystem)} icon="💨" chart={showMiniCharts ? <Sparkline values={windSeries} stroke="#14b8a6" /> : null} />
         <Tile
           label="Wind direction"
           value={current?.windDirDeg === null || current?.windDirDeg === undefined ? 'N/A' : `${current.windDirDeg.toFixed(0)}°`}
