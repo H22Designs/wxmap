@@ -329,6 +329,106 @@ function extractString(record: Record<string, unknown>, keys: string[]): string 
   return null;
 }
 
+function parseLatLngInput(raw: string): { lat: number; lng: number } | null {
+  const normalized = raw
+    .trim()
+    .replace(/[|;]/g, ',')
+    .replace(/\s+/g, ',');
+
+  const parts = normalized.split(',').map((item) => item.trim()).filter(Boolean);
+
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const lat = Number(parts[0]);
+  const lng = Number(parts[1]);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return null;
+  }
+
+  return { lat, lng };
+}
+
+async function resolveViaWeatherGovNearestByPoint(
+  provider: string,
+  externalId: string
+): Promise<ProviderStationCandidate | null> {
+  const point = parseLatLngInput(externalId);
+
+  if (!point) {
+    return null;
+  }
+
+  const pointsResponse = await fetch(
+    `https://api.weather.gov/points/${point.lat.toFixed(4)},${point.lng.toFixed(4)}`,
+    {
+      headers: {
+        Accept: 'application/geo+json'
+      }
+    }
+  );
+
+  if (!pointsResponse.ok) {
+    return null;
+  }
+
+  const pointsPayload = (await pointsResponse.json()) as Record<string, unknown>;
+  const pointsProperties = (pointsPayload.properties as Record<string, unknown> | undefined) ?? {};
+  const stationsUrl = extractString(pointsProperties, ['observationStations']);
+
+  if (!stationsUrl) {
+    return null;
+  }
+
+  const stationsResponse = await fetch(stationsUrl, {
+    headers: {
+      Accept: 'application/geo+json'
+    }
+  });
+
+  if (!stationsResponse.ok) {
+    return null;
+  }
+
+  const stationsPayload = (await stationsResponse.json()) as Record<string, unknown>;
+  const features = Array.isArray(stationsPayload.features) ? stationsPayload.features : [];
+  const first = (features[0] as Record<string, unknown> | undefined) ?? null;
+
+  if (!first) {
+    return null;
+  }
+
+  const properties = (first.properties as Record<string, unknown> | undefined) ?? {};
+  const geometry = (first.geometry as Record<string, unknown> | undefined) ?? {};
+  const coordinates = Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
+
+  const stationIdentifier = extractString(properties, ['stationIdentifier']);
+  const name = extractString(properties, ['name']) ?? `${provider.toUpperCase()} ${stationIdentifier ?? externalId}`;
+  const lng = typeof coordinates[0] === 'number' ? coordinates[0] : null;
+  const lat = typeof coordinates[1] === 'number' ? coordinates[1] : null;
+  const elevationObj = (properties.elevation as Record<string, unknown> | undefined) ?? {};
+  const elevationM = extractNumber(elevationObj, ['value']);
+
+  if (!stationIdentifier || lat === null || lng === null) {
+    return null;
+  }
+
+  return normalizeCandidate({
+    provider,
+    externalId: stationIdentifier,
+    name,
+    lat,
+    lng,
+    elevationM
+  });
+}
+
 async function resolveViaWeatherGov(provider: string, externalId: string): Promise<ProviderStationCandidate | null> {
   const stationId = provider === 'airport'
     ? normalizeAirportStationId(externalId)
@@ -533,6 +633,67 @@ async function resolveViaSynoptic(
   });
 }
 
+async function resolveViaSynopticNearbyByPoint(
+  provider: string,
+  externalId: string,
+  config: ProviderLookupConfig
+): Promise<ProviderStationCandidate | null> {
+  const token = config.apiKey?.trim();
+  const point = parseLatLngInput(externalId);
+
+  if (!token || !point) {
+    return null;
+  }
+
+  const endpoint = config.endpoint?.trim() || 'https://api.synopticdata.com/v2/stations/metadata';
+  const url = new URL(endpoint);
+  url.searchParams.set('token', token);
+  url.searchParams.set('radius', `${point.lat},${point.lng},25`);
+  url.searchParams.set('limit', '1');
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const summary = (payload.SUMMARY as Record<string, unknown> | undefined) ?? {};
+  const ok = extractNumber(summary, ['RESPONSE_CODE']);
+  if (ok !== null && ok !== 1) {
+    return null;
+  }
+
+  const stations = Array.isArray(payload.STATION) ? payload.STATION : [];
+  const first = (stations[0] as Record<string, unknown> | undefined) ?? null;
+  if (!first) {
+    return null;
+  }
+
+  const stid = extractString(first, ['STID', 'stid']);
+  const lat = extractNumber(first, ['LATITUDE', 'latitude', 'lat']);
+  const lng = extractNumber(first, ['LONGITUDE', 'longitude', 'lon', 'lng']);
+  const name = extractString(first, ['NAME', 'name']) ?? `${provider.toUpperCase()} ${stid ?? externalId}`;
+  const elevationM = extractNumber(first, ['ELEVATION', 'elevation', 'elevation_m']);
+
+  if (!stid || lat === null || lng === null) {
+    return null;
+  }
+
+  return normalizeCandidate({
+    provider,
+    externalId: stid,
+    name,
+    lat,
+    lng,
+    elevationM
+  });
+}
+
 export function findProviderStationCandidate(input: {
   provider: string;
   externalId: string;
@@ -582,12 +743,22 @@ export async function resolveProviderStationCandidate(input: {
       if (fromWeatherGov) {
         return fromWeatherGov;
       }
+
+      const fromWeatherGovNearest = await resolveViaWeatherGovNearestByPoint(provider, externalId);
+      if (fromWeatherGovNearest) {
+        return fromWeatherGovNearest;
+      }
     }
 
-    if (provider === 'mesowest') {
+    if (provider === 'mesowest' || provider === 'madis') {
       const fromSynoptic = await resolveViaSynoptic(provider, externalId, input.config ?? {});
       if (fromSynoptic) {
         return fromSynoptic;
+      }
+
+      const fromSynopticNearby = await resolveViaSynopticNearbyByPoint(provider, externalId, input.config ?? {});
+      if (fromSynopticNearby) {
+        return fromSynopticNearby;
       }
     }
 

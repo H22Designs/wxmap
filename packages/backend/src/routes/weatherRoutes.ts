@@ -4,7 +4,9 @@ import type { AccessTokenPayload } from '../auth/tokens.js';
 import { requireAuthenticatedUser } from '../middleware/requireAuthenticatedUser.js';
 import {
   fetchBackfillObservationsForStation,
-  fetchLatestObservationForStation
+  fetchOpenMeteoBackfillByCoordinates,
+  fetchLatestObservationForStation,
+  type ProviderObservationSample
 } from '../services/providerObservations.js';
 import {
   resolveProviderStationCandidate,
@@ -141,8 +143,80 @@ function parseStationCandidate(input: unknown): StationCandidate | null {
   };
 }
 
+const NEARBY_FALLBACK_MAX_DISTANCE_METERS = 250;
+
+function toRadians(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+function distanceMeters(
+  leftLat: number,
+  leftLng: number,
+  rightLat: number,
+  rightLng: number
+): number {
+  const earthRadiusMeters = 6_371_000;
+  const dLat = toRadians(rightLat - leftLat);
+  const dLng = toRadians(rightLng - leftLng);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(leftLat)) * Math.cos(toRadians(rightLat)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+}
+
+type StationRecord = {
+  id: string;
+  provider: string;
+  externalId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  elevationM: number | null;
+  active: boolean;
+  createdAt: string;
+};
+
 export function weatherRouter(deps: WeatherRouterDeps): Router {
   const router = Router();
+
+  async function tryNearbyStationFallbackBackfill(input: {
+    station: StationRecord;
+    days: number;
+  }): Promise<{ samples: ProviderObservationSample[]; from: StationRecord; distanceMeters: number } | null> {
+    const allStations = deps.stationRepository.listStations({ limit: 5000 }) as StationRecord[];
+
+    const nearbyCandidates = allStations
+      .filter((candidate) => candidate.id !== input.station.id)
+      .filter((candidate) => Number.isFinite(candidate.lat) && Number.isFinite(candidate.lng))
+      .map((candidate) => ({
+        candidate,
+        distance: distanceMeters(input.station.lat, input.station.lng, candidate.lat, candidate.lng)
+      }))
+      .filter((item) => item.distance <= NEARBY_FALLBACK_MAX_DISTANCE_METERS)
+      .sort((left, right) => left.distance - right.distance);
+
+    for (const item of nearbyCandidates) {
+      const samples = await fetchBackfillObservationsForStation({
+        station: item.candidate,
+        days: input.days,
+        config: deps.getProviderLookupConfig?.(item.candidate.provider) ?? null
+      });
+
+      if (samples.length === 0) {
+        continue;
+      }
+
+      return {
+        samples,
+        from: item.candidate,
+        distanceMeters: item.distance
+      };
+    }
+
+    return null;
+  }
 
   async function hydrateLatestObservationIfAvailable(station: {
     id: string;
@@ -414,19 +488,7 @@ export function weatherRouter(deps: WeatherRouterDeps): Router {
     }
 
     const stationId = String(req.params.id ?? '').trim();
-    const station = deps.stationRepository.getStationById(stationId) as
-      | {
-          id: string;
-          provider: string;
-          externalId: string;
-          name: string;
-          lat: number;
-          lng: number;
-          elevationM: number | null;
-          active: boolean;
-          createdAt: string;
-        }
-      | null;
+    const station = deps.stationRepository.getStationById(stationId) as StationRecord | null;
 
     if (!station) {
       res.status(404).json({ error: `Station '${stationId}' not found` });
@@ -441,11 +503,74 @@ export function weatherRouter(deps: WeatherRouterDeps): Router {
       return;
     }
 
-    const samples = await fetchBackfillObservationsForStation({
+    let samples = await fetchBackfillObservationsForStation({
       station,
       days,
       config: deps.getProviderLookupConfig?.(station.provider) ?? null
     });
+
+    let fallbackFrom: { provider: string; externalId: string; distanceMeters: number } | null = null;
+    let usedOpenMeteoFallback = false;
+
+    if (
+      samples.length === 0 &&
+      Number.isFinite(station.lat) &&
+      Number.isFinite(station.lng)
+    ) {
+      const nearbyFallback = await tryNearbyStationFallbackBackfill({ station, days });
+
+      if (nearbyFallback) {
+        fallbackFrom = {
+          provider: nearbyFallback.from.provider,
+          externalId: nearbyFallback.from.externalId,
+          distanceMeters: nearbyFallback.distanceMeters
+        };
+
+        samples = nearbyFallback.samples.map((sample) => ({
+          ...sample,
+          rawJson: JSON.stringify({
+            source: 'nearby-fallback',
+            targetStation: {
+              provider: station.provider,
+              externalId: station.externalId
+            },
+            fallbackStation: {
+              provider: nearbyFallback.from.provider,
+              externalId: nearbyFallback.from.externalId,
+              distanceMeters: Math.round(nearbyFallback.distanceMeters)
+            },
+            originalRawJson: sample.rawJson
+          })
+        }));
+      }
+    }
+
+    if (
+      samples.length === 0 &&
+      Number.isFinite(station.lat) &&
+      Number.isFinite(station.lng)
+    ) {
+      const openMeteoSamples = await fetchOpenMeteoBackfillByCoordinates({
+        lat: station.lat,
+        lng: station.lng,
+        days
+      });
+
+      if (openMeteoSamples.length > 0) {
+        usedOpenMeteoFallback = true;
+        samples = openMeteoSamples.map((sample) => ({
+          ...sample,
+          rawJson: JSON.stringify({
+            source: 'open-meteo-fallback',
+            targetStation: {
+              provider: station.provider,
+              externalId: station.externalId
+            },
+            originalRawJson: sample.rawJson
+          })
+        }));
+      }
+    }
 
     for (const sample of samples) {
       deps.observationRepository.upsertObservation({
@@ -467,13 +592,29 @@ export function weatherRouter(deps: WeatherRouterDeps): Router {
     let note: string | null = null;
 
     if (samples.length === 0) {
+      const providerConfig = deps.getProviderLookupConfig?.(station.provider) ?? null;
+      const hasCustomEndpoint = Boolean(providerConfig?.endpoint && providerConfig.endpoint.trim().length > 0);
+
       if (normalizedProvider === 'cwop' || normalizedProvider === 'findu') {
         note = `No upstream CWOP/FindU weather reports were available for ${station.externalId} in the requested time window.`;
       } else if (normalizedProvider === 'airport' || normalizedProvider === 'nws' || normalizedProvider === 'noaa') {
         note = `No upstream weather.gov observations were available for ${station.externalId} in the requested time window.`;
+      } else if (normalizedProvider === 'ambient') {
+        note = `No Ambient Weather historical records were returned for ${station.externalId}. Verify provider API key + application key and station MAC identifier.`;
+      } else if (normalizedProvider === 'mesowest' || normalizedProvider === 'madis') {
+        note = `No Synoptic/MesoWest time-series records were returned for ${station.externalId}. Verify token scope and historical access window.`;
+      } else if (
+        (normalizedProvider === 'wunderground' || normalizedProvider === 'acurite' || normalizedProvider === 'pwsweather') &&
+        !hasCustomEndpoint
+      ) {
+        note = `No historical endpoint is configured for ${normalizedProvider}. Set provider endpoint and credentials in Admin > Providers, then retry backfill.`;
       } else {
         note = `No upstream observations were available for ${station.externalId} in the requested time window.`;
       }
+    } else if (fallbackFrom) {
+      note = `Imported fallback history from nearby station ${fallbackFrom.provider}:${fallbackFrom.externalId} (~${Math.round(fallbackFrom.distanceMeters)}m away) because direct provider history was unavailable.`;
+    } else if (usedOpenMeteoFallback) {
+      note = 'Imported fallback history from Open-Meteo archive grid data because direct/nearby station history was unavailable.';
     }
 
     res.status(200).json({
