@@ -18,6 +18,35 @@ const PROVIDER_LOOKUP_ALIASES: Record<string, string[]> = {
   findu: ['findu', 'cwop']
 };
 
+const AIRPORT_IATA_TO_ICAO: Record<string, string> = {
+  ATL: 'KATL',
+  BOS: 'KBOS',
+  DCA: 'KDCA',
+  DFW: 'KDFW',
+  DEN: 'KDEN',
+  DTW: 'KDTW',
+  EWR: 'KEWR',
+  IAD: 'KIAD',
+  IAH: 'KIAH',
+  JFK: 'KJFK',
+  LAS: 'KLAS',
+  LAX: 'KLAX',
+  LGA: 'KLGA',
+  MCO: 'KMCO',
+  MIA: 'KMIA',
+  MSP: 'KMSP',
+  ORD: 'KORD',
+  PDX: 'KPDX',
+  PHL: 'KPHL',
+  PHX: 'KPHX',
+  SAN: 'KSAN',
+  SEA: 'KSEA',
+  SFO: 'KSFO',
+  SJC: 'KSJC',
+  SLC: 'KSLC',
+  TPA: 'KTPA'
+};
+
 const PROVIDER_STATION_CATALOG: Record<string, ProviderStationCandidate[]> = {
   wunderground: [
     {
@@ -150,8 +179,60 @@ const PROVIDER_STATION_CATALOG: Record<string, ProviderStationCandidate[]> = {
       lng: -87.9751,
       elevationM: 114.6
     }
+  ],
+  airport: [
+    {
+      provider: 'airport',
+      externalId: 'KSEA',
+      name: 'Seattle-Tacoma Intl Airport',
+      lat: 47.449,
+      lng: -122.309,
+      elevationM: 132
+    },
+    {
+      provider: 'airport',
+      externalId: 'KBOS',
+      name: 'Boston Logan Intl Airport',
+      lat: 42.3656,
+      lng: -71.0096,
+      elevationM: 6
+    },
+    {
+      provider: 'airport',
+      externalId: 'KJFK',
+      name: 'John F. Kennedy Intl Airport',
+      lat: 40.6413,
+      lng: -73.7781,
+      elevationM: 4
+    },
+    {
+      provider: 'airport',
+      externalId: 'KLAX',
+      name: 'Los Angeles Intl Airport',
+      lat: 33.9425,
+      lng: -118.4081,
+      elevationM: 38
+    }
   ]
 };
+
+function normalizeAirportStationId(externalId: string): string {
+  const raw = externalId.trim().toUpperCase();
+
+  if (!raw) {
+    return raw;
+  }
+
+  if (/^[A-Z]{4}$/.test(raw)) {
+    return raw;
+  }
+
+  if (/^[A-Z]{3}$/.test(raw)) {
+    return AIRPORT_IATA_TO_ICAO[raw] ?? `K${raw}`;
+  }
+
+  return raw;
+}
 
 function resolveProviderKeys(provider: string): string[] {
   const normalized = provider.trim().toLowerCase();
@@ -249,7 +330,9 @@ function extractString(record: Record<string, unknown>, keys: string[]): string 
 }
 
 async function resolveViaWeatherGov(provider: string, externalId: string): Promise<ProviderStationCandidate | null> {
-  const stationId = externalId.trim().toUpperCase();
+  const stationId = provider === 'airport'
+    ? normalizeAirportStationId(externalId)
+    : externalId.trim().toUpperCase();
   if (!stationId) {
     return null;
   }
@@ -455,7 +538,9 @@ export function findProviderStationCandidate(input: {
   externalId: string;
 }): ProviderStationCandidate | null {
   const provider = input.provider.trim().toLowerCase();
-  const externalId = input.externalId.trim().toLowerCase();
+  const externalId = provider === 'airport'
+    ? normalizeAirportStationId(input.externalId).toLowerCase()
+    : input.externalId.trim().toLowerCase();
 
   if (!provider || !externalId) {
     return null;
@@ -471,7 +556,9 @@ export async function resolveProviderStationCandidate(input: {
   config?: ProviderLookupConfig | null;
 }): Promise<ProviderStationCandidate | null> {
   const provider = input.provider.trim().toLowerCase();
-  const externalId = input.externalId.trim();
+  const externalId = provider === 'airport'
+    ? normalizeAirportStationId(input.externalId)
+    : input.externalId.trim();
 
   if (!provider || !externalId) {
     return null;
@@ -490,7 +577,7 @@ export async function resolveProviderStationCandidate(input: {
       }
     }
 
-    if (provider === 'nws' || provider === 'noaa') {
+    if (provider === 'nws' || provider === 'noaa' || provider === 'airport') {
       const fromWeatherGov = await resolveViaWeatherGov(provider, externalId);
       if (fromWeatherGov) {
         return fromWeatherGov;

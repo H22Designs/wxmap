@@ -6,6 +6,7 @@ export type ProviderCatalogEntry = {
 };
 
 export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
+  { id: 'airport', label: 'Airport Reference', defaultEnabled: false, defaultIntervalMinutes: 15 },
   { id: 'nws', label: 'National Weather Service', defaultEnabled: true, defaultIntervalMinutes: 10 },
   { id: 'noaa', label: 'NOAA', defaultEnabled: false, defaultIntervalMinutes: 15 },
   { id: 'madis', label: 'MADIS', defaultEnabled: false, defaultIntervalMinutes: 10 },

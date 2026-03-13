@@ -1342,6 +1342,14 @@ export function App(): JSX.Element {
       : `Add ${externalId}`;
   }, [quickAddProvider, quickAddExternalId, quickAddResolvedCandidate]);
 
+  const quickAddIdentifierPlaceholder = useMemo(() => {
+    if (quickAddProvider.trim().toLowerCase() === 'airport') {
+      return 'e.g. KSEA or SEA';
+    }
+
+    return 'e.g. KSEA or 72493';
+  }, [quickAddProvider]);
+
   const quickAddGuidance = useMemo(() => {
     if (!session) {
       return 'Log in to add stations.';
@@ -1352,7 +1360,9 @@ export function App(): JSX.Element {
     }
 
     if (!quickAddExternalId.trim()) {
-      return 'Select a station/site from the source list, or enter station ID/call sign.';
+      return quickAddProvider.trim().toLowerCase() === 'airport'
+        ? 'Enter an airport ICAO or IATA code (for example KSEA or SEA).'
+        : 'Select a station/site from the source list, or enter station ID/call sign.';
     }
 
     if (quickAddResolvedCandidate) {
@@ -2235,7 +2245,7 @@ export function App(): JSX.Element {
           >
             <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Quick add station</summary>
             <p style={{ margin: 0, color: 'var(--wx-muted, #475569)', fontSize: 13 }}>
-              Enter source + station ID/call sign. No endpoint knowledge needed.
+              Enter source + station ID/call sign (airport source accepts ICAO/IATA). No endpoint knowledge needed.
             </p>
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
               <label style={{ display: 'grid', gap: 4 }}>
@@ -2256,7 +2266,7 @@ export function App(): JSX.Element {
               <label style={{ display: 'grid', gap: 4 }}>
                 Station ID / call sign
                 <input
-                  placeholder="e.g. KSEA or 72493"
+                  placeholder={quickAddIdentifierPlaceholder}
                   value={quickAddExternalId}
                   onChange={(event) => {
                     const value = event.target.value;
