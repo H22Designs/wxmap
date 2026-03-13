@@ -1,5 +1,14 @@
 import type Database from 'better-sqlite3';
 
+function ensureColumn(db: Database.Database, tableName: string, columnName: string, columnSql: string): void {
+  const infoRows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  const hasColumn = infoRows.some((row) => row.name === columnName);
+
+  if (!hasColumn) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnSql}`);
+  }
+}
+
 export function applySchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS stations (
@@ -60,12 +69,69 @@ export function applySchema(db: Database.Database): void {
       user_id TEXT PRIMARY KEY,
       dark_mode INTEGER NOT NULL DEFAULT 0,
       map_view_mode TEXT NOT NULL DEFAULT '2d' CHECK (map_view_mode IN ('2d', '3d')),
-      unit_system TEXT NOT NULL DEFAULT 'metric' CHECK (unit_system IN ('metric', 'imperial')),
+      unit_system TEXT NOT NULL DEFAULT 'imperial' CHECK (unit_system IN ('metric', 'imperial')),
       show_radar_layer INTEGER NOT NULL DEFAULT 1,
       show_station_layer INTEGER NOT NULL DEFAULT 1,
+      weather_visual_tone TEXT NOT NULL DEFAULT 'balanced',
+      show_weather_animations INTEGER NOT NULL DEFAULT 1,
+      show_mini_charts INTEGER NOT NULL DEFAULT 1,
+      history_chart_mode TEXT NOT NULL DEFAULT 'line',
       visible_providers_json TEXT NOT NULL DEFAULT '[]',
+      active_workspace TEXT NOT NULL DEFAULT 'dashboard',
+      surface_style TEXT NOT NULL DEFAULT 'glass',
+      dashboard_card_order_json TEXT NOT NULL DEFAULT '["map-controls","experience","map","history"]',
+      hidden_dashboard_cards_json TEXT NOT NULL DEFAULT '[]',
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
   `);
+
+  ensureColumn(
+    db,
+    'user_preferences',
+    'weather_visual_tone',
+    "weather_visual_tone TEXT NOT NULL DEFAULT 'balanced'"
+  );
+  ensureColumn(
+    db,
+    'user_preferences',
+    'show_weather_animations',
+    "show_weather_animations INTEGER NOT NULL DEFAULT 1"
+  );
+  ensureColumn(
+    db,
+    'user_preferences',
+    'show_mini_charts',
+    "show_mini_charts INTEGER NOT NULL DEFAULT 1"
+  );
+  ensureColumn(
+    db,
+    'user_preferences',
+    'history_chart_mode',
+    "history_chart_mode TEXT NOT NULL DEFAULT 'line'"
+  );
+  ensureColumn(
+    db,
+    'user_preferences',
+    'active_workspace',
+    "active_workspace TEXT NOT NULL DEFAULT 'dashboard'"
+  );
+  ensureColumn(
+    db,
+    'user_preferences',
+    'surface_style',
+    "surface_style TEXT NOT NULL DEFAULT 'glass'"
+  );
+  ensureColumn(
+    db,
+    'user_preferences',
+    'dashboard_card_order_json',
+    `dashboard_card_order_json TEXT NOT NULL DEFAULT '["map-controls","experience","map","history"]'`
+  );
+  ensureColumn(
+    db,
+    'user_preferences',
+    'hidden_dashboard_cards_json',
+    "hidden_dashboard_cards_json TEXT NOT NULL DEFAULT '[]'"
+  );
 }

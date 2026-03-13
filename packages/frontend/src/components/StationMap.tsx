@@ -1,11 +1,11 @@
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import type { CSSProperties } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
 import type { CurrentObservation, RadarFrame, RadarFrameDensity, Station } from '../services/api';
 import { mapContainerStyle } from '../styles/ui';
 import type { UnitSystem } from './UserExperiencePanel';
@@ -134,6 +134,47 @@ function getCenter(stations: Station[]): [number, number] {
   return [totals.lat / stations.length, totals.lng / stations.length];
 }
 
+function MapViewportController(input: {
+  selectedStation: Station | null;
+  fallbackCenter: [number, number];
+  fallbackZoom: number;
+  focusZoom: number;
+  minZoom: number;
+  maxZoom: number;
+}): null {
+  const map = useMap();
+
+  function clampZoom(value: number): number {
+    return Math.max(input.minZoom, Math.min(input.maxZoom, value));
+  }
+
+  useEffect(() => {
+    if (input.selectedStation) {
+      map.flyTo([input.selectedStation.lat, input.selectedStation.lng], clampZoom(input.focusZoom), {
+        animate: true,
+        duration: 0.65
+      });
+      return;
+    }
+
+    map.setView(input.fallbackCenter, clampZoom(input.fallbackZoom), {
+      animate: false
+    });
+  }, [
+    map,
+    input.selectedStation?.id,
+    input.selectedStation?.lat,
+    input.selectedStation?.lng,
+    input.fallbackCenter,
+    input.fallbackZoom,
+    input.focusZoom
+    ,input.minZoom,
+    input.maxZoom
+  ]);
+
+  return null;
+}
+
 export function StationMap({
   stations,
   currentByStationId,
@@ -152,7 +193,10 @@ export function StationMap({
   onStationSelect
 }: StationMapProps): JSX.Element {
   const [frameCursor, setFrameCursor] = useState(0);
-  const center = getCenter(stations);
+  const center = useMemo(() => getCenter(stations), [stations]);
+  const selectedStation = selectedStationId
+    ? stations.find((station) => station.id === selectedStationId) ?? null
+    : null;
   const hasFrames = radarFrames.length > 0;
   const frameCount = radarFrames.length;
   const safeCursor = hasFrames ? ((frameCursor % frameCount) + frameCount) % frameCount : 0;
@@ -199,6 +243,15 @@ export function StationMap({
   }, [radarFrames, radarFrameDensity]);
 
   const isGlobeMode = mapViewMode === '3d';
+  const minZoom = 3;
+  const maxZoom = 10;
+  const defaultZoom = isGlobeMode ? 4 : 5;
+  const selectedStationZoom = isGlobeMode ? 5 : 7;
+  const lightX = 32;
+  const lightY = 21;
+  const cloudRotationDeg = hasFrames ? (safeCursor * 1.6) % 360 : 0;
+  const terminatorAngleDeg = 108;
+
   const containerStyle: CSSProperties = {
     ...mapContainerStyle,
     position: 'relative',
@@ -207,17 +260,34 @@ export function StationMap({
     margin: isGlobeMode ? '8px auto 0' : undefined,
     borderRadius: isGlobeMode ? '50%' : mapContainerStyle.borderRadius,
     boxShadow: isGlobeMode
-      ? '0 24px 46px rgba(15, 23, 42, 0.42), inset 0 0 0 1px rgba(148, 163, 184, 0.45)'
+      ? '0 34px 66px rgba(2, 6, 23, 0.58), inset 0 0 0 1px rgba(148, 163, 184, 0.5)'
       : undefined,
-    transform: isGlobeMode ? 'perspective(1200px) rotateX(18deg) scale(1.02)' : undefined,
-    WebkitTransform: isGlobeMode ? 'perspective(1200px) rotateX(18deg) scale(1.02)' : undefined,
+    transform: isGlobeMode ? 'perspective(1200px) rotateX(17deg) scale(1.025)' : undefined,
+    WebkitTransform: isGlobeMode ? 'perspective(1200px) rotateX(17deg) scale(1.025)' : undefined,
     transformOrigin: isGlobeMode ? 'center center' : undefined,
-    background: isGlobeMode ? (darkMode ? '#020617' : '#dbeafe') : undefined
+    background: isGlobeMode ? (darkMode ? '#020617' : '#bfdbfe') : undefined
   };
 
   return (
     <div aria-label="Station map" style={containerStyle}>
       {isGlobeMode ? (
+        <>
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: -24,
+            width: '72%',
+            height: 46,
+            transform: 'translateX(-50%)',
+            borderRadius: '999px',
+            background: 'radial-gradient(ellipse at center, rgba(15, 23, 42, 0.42) 0%, rgba(15, 23, 42, 0) 74%)',
+            filter: 'blur(2px)',
+            pointerEvents: 'none',
+            zIndex: 480
+          }}
+        />
         <div
           aria-hidden="true"
           style={{
@@ -226,14 +296,101 @@ export function StationMap({
             pointerEvents: 'none',
             borderRadius: '50%',
             background:
-              'radial-gradient(circle at 30% 20%, rgba(255,255,255,0.26), rgba(255,255,255,0.05) 34%, rgba(0,0,0,0.2) 72%, rgba(0,0,0,0.38) 100%)',
-            zIndex: 500
+              `radial-gradient(circle at ${lightX}% ${lightY}%, rgba(255,255,255,0.34), rgba(255,255,255,0.09) 30%, rgba(0,0,0,0.22) 72%, rgba(0,0,0,0.48) 100%)`,
+            zIndex: 520
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            borderRadius: '50%',
+            background:
+              'radial-gradient(circle at 52% 52%, rgba(6, 182, 212, 0.09) 0%, rgba(37, 99, 235, 0.04) 38%, rgba(0, 0, 0, 0) 72%)',
+            zIndex: 525
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            borderRadius: '50%',
+            background:
+              `linear-gradient(${terminatorAngleDeg}deg, rgba(15,23,42,0.06) 0%, rgba(15,23,42,0) 44%, rgba(2,6,23,0.28) 70%, rgba(2,6,23,0.52) 100%)`,
+            zIndex: 526
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            borderRadius: '50%',
+            backgroundImage:
+              'repeating-linear-gradient(0deg, rgba(255,255,255,0.09) 0 1px, transparent 1px 26px), repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 26px)',
+            mixBlendMode: darkMode ? 'screen' : 'soft-light',
+            opacity: darkMode ? 0.26 : 0.2,
+            zIndex: 530
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            borderRadius: '50%',
+            backgroundImage:
+              'radial-gradient(circle at 18% 34%, rgba(255,255,255,0.23) 0 8%, rgba(255,255,255,0) 20%), radial-gradient(circle at 65% 26%, rgba(255,255,255,0.17) 0 8%, rgba(255,255,255,0) 22%), radial-gradient(circle at 72% 66%, rgba(255,255,255,0.16) 0 9%, rgba(255,255,255,0) 22%), radial-gradient(circle at 34% 74%, rgba(255,255,255,0.15) 0 10%, rgba(255,255,255,0) 23%)',
+            transform: `rotate(${cloudRotationDeg}deg) scale(1.02)`,
+            opacity: darkMode ? 0.18 : 0.14,
+            mixBlendMode: 'screen',
+            zIndex: 535
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: -3,
+            pointerEvents: 'none',
+            borderRadius: '50%',
+            border: darkMode ? '1px solid rgba(125, 211, 252, 0.5)' : '1px solid rgba(14, 165, 233, 0.36)',
+            boxShadow: darkMode
+              ? '0 0 0 2px rgba(8, 145, 178, 0.14), 0 0 18px rgba(56, 189, 248, 0.3)'
+              : '0 0 0 2px rgba(59, 130, 246, 0.12), 0 0 14px rgba(56, 189, 248, 0.22)',
+            zIndex: 540
+          }}
+        />
+        </>
+      ) : null}
+      {isGlobeMode ? (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: '10%',
+            left: '17%',
+            width: '40%',
+            height: '26%',
+            pointerEvents: 'none',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.44) 0%, rgba(255,255,255,0.22) 38%, rgba(255,255,255,0) 72%)',
+            transform: 'rotate(-16deg)',
+            zIndex: 545
           }}
         />
       ) : null}
       <MapContainer
         center={center}
-        zoom={5}
+        zoom={defaultZoom}
+        minZoom={minZoom}
+        maxZoom={maxZoom}
         style={{
           height: '100%',
           width: '100%',
@@ -242,6 +399,14 @@ export function StationMap({
           filter: isGlobeMode ? 'saturate(1.08) contrast(1.03)' : undefined
         }}
       >
+        <MapViewportController
+          selectedStation={selectedStation}
+          fallbackCenter={center}
+          fallbackZoom={defaultZoom}
+          focusZoom={selectedStationZoom}
+          minZoom={minZoom}
+          maxZoom={maxZoom}
+        />
         <TileLayer
           attribution={
             darkMode
@@ -275,6 +440,8 @@ export function StationMap({
               attribution="Radar © RainViewer"
               url={frame.tileUrl}
               opacity={opacity}
+              maxNativeZoom={10}
+              maxZoom={10}
               className="wx-radar-layer"
             />
           );

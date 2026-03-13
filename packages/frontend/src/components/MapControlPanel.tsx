@@ -14,6 +14,9 @@ type MapControlPanelProps = {
   radarPlaying: boolean;
   darkMode: boolean;
   radarStatus: string;
+  isDataRefreshing: boolean;
+  lastDataRefreshLabel: string;
+  autoRefreshSeconds: 0 | 30 | 60 | 120 | 300;
   filteredCount: number;
   totalCount: number;
   onMetricChange: (metric: MetricKey) => void;
@@ -25,6 +28,8 @@ type MapControlPanelProps = {
   onRadarOpacityChange: (opacity: number) => void;
   onToggleRadarPlaying: () => void;
   onToggleDarkMode: () => void;
+  onRefreshData: () => void;
+  onAutoRefreshSecondsChange: (seconds: 0 | 30 | 60 | 120 | 300) => void;
 };
 
 export function MapControlPanel({
@@ -39,6 +44,9 @@ export function MapControlPanel({
   radarPlaying,
   darkMode,
   radarStatus,
+  isDataRefreshing,
+  lastDataRefreshLabel,
+  autoRefreshSeconds,
   filteredCount,
   totalCount,
   onMetricChange,
@@ -49,7 +57,9 @@ export function MapControlPanel({
   onRadarSpeedChange,
   onRadarOpacityChange,
   onToggleRadarPlaying,
-  onToggleDarkMode
+  onToggleDarkMode,
+  onRefreshData,
+  onAutoRefreshSecondsChange
 }: MapControlPanelProps): JSX.Element {
   return (
     <div style={controlGridStyle}>
@@ -148,8 +158,33 @@ export function MapControlPanel({
       <button type="button" onClick={onToggleDarkMode} aria-label="Toggle dark mode">
         {darkMode ? 'Use light mode' : 'Use dark mode'}
       </button>
+      <label style={{ display: 'grid', gap: 4 }}>
+        Auto refresh
+        <select
+          aria-label="Select auto refresh interval"
+          value={autoRefreshSeconds}
+          onChange={(event) => onAutoRefreshSecondsChange(Number(event.target.value) as 0 | 30 | 60 | 120 | 300)}
+        >
+          <option value={0}>Off</option>
+          <option value={30}>Every 30s</option>
+          <option value={60}>Every 60s</option>
+          <option value={120}>Every 2m</option>
+          <option value={300}>Every 5m</option>
+        </select>
+      </label>
+      <button
+        type="button"
+        onClick={onRefreshData}
+        aria-label="Refresh weather data"
+        disabled={isDataRefreshing}
+      >
+        {isDataRefreshing ? 'Refreshing…' : 'Refresh now'}
+      </button>
       <div>
         Radar status: <strong>{radarStatus}</strong>
+      </div>
+      <div>
+        Last updated: <strong>{lastDataRefreshLabel}</strong>
       </div>
     </div>
   );

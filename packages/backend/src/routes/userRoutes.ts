@@ -11,7 +11,15 @@ type UserPreferencesRepositoryLike = {
     unitSystem?: 'metric' | 'imperial';
     showRadarLayer?: boolean;
     showStationLayer?: boolean;
+    weatherVisualTone?: 'balanced' | 'vivid' | 'minimal';
+    showWeatherAnimations?: boolean;
+    showMiniCharts?: boolean;
+    historyChartMode?: 'line' | 'area';
     visibleProviders?: string[];
+    activeWorkspace?: 'dashboard' | 'explore' | 'admin';
+    surfaceStyle?: 'glass' | 'elevated' | 'neo';
+    dashboardCardOrder?: string[];
+    hiddenDashboardCards?: string[];
   }) => unknown;
 };
 
@@ -67,6 +75,14 @@ export function userRouter(deps: UserRouterDeps): Router {
     const rawMapViewMode = req.body?.mapViewMode;
     const rawUnitSystem = req.body?.unitSystem;
     const rawVisibleProviders = req.body?.visibleProviders;
+    const rawWeatherVisualTone = req.body?.weatherVisualTone;
+    const rawShowWeatherAnimations = req.body?.showWeatherAnimations;
+    const rawShowMiniCharts = req.body?.showMiniCharts;
+    const rawHistoryChartMode = req.body?.historyChartMode;
+    const rawActiveWorkspace = req.body?.activeWorkspace;
+    const rawSurfaceStyle = req.body?.surfaceStyle;
+    const rawDashboardCardOrder = req.body?.dashboardCardOrder;
+    const rawHiddenDashboardCards = req.body?.hiddenDashboardCards;
 
     if (rawMapViewMode !== undefined && rawMapViewMode !== '2d' && rawMapViewMode !== '3d') {
       res.status(400).json({ error: 'mapViewMode must be 2d or 3d' });
@@ -86,6 +102,71 @@ export function userRouter(deps: UserRouterDeps): Router {
       return;
     }
 
+    if (
+      rawWeatherVisualTone !== undefined &&
+      rawWeatherVisualTone !== 'balanced' &&
+      rawWeatherVisualTone !== 'vivid' &&
+      rawWeatherVisualTone !== 'minimal'
+    ) {
+      res.status(400).json({ error: 'weatherVisualTone must be balanced, vivid, or minimal' });
+      return;
+    }
+
+    if (rawShowWeatherAnimations !== undefined && typeof rawShowWeatherAnimations !== 'boolean') {
+      res.status(400).json({ error: 'showWeatherAnimations must be a boolean' });
+      return;
+    }
+
+    if (rawShowMiniCharts !== undefined && typeof rawShowMiniCharts !== 'boolean') {
+      res.status(400).json({ error: 'showMiniCharts must be a boolean' });
+      return;
+    }
+
+    if (
+      rawHistoryChartMode !== undefined &&
+      rawHistoryChartMode !== 'line' &&
+      rawHistoryChartMode !== 'area'
+    ) {
+      res.status(400).json({ error: 'historyChartMode must be line or area' });
+      return;
+    }
+
+    if (
+      rawActiveWorkspace !== undefined &&
+      rawActiveWorkspace !== 'dashboard' &&
+      rawActiveWorkspace !== 'explore' &&
+      rawActiveWorkspace !== 'admin'
+    ) {
+      res.status(400).json({ error: 'activeWorkspace must be dashboard, explore, or admin' });
+      return;
+    }
+
+    if (
+      rawSurfaceStyle !== undefined &&
+      rawSurfaceStyle !== 'glass' &&
+      rawSurfaceStyle !== 'elevated' &&
+      rawSurfaceStyle !== 'neo'
+    ) {
+      res.status(400).json({ error: 'surfaceStyle must be glass, elevated, or neo' });
+      return;
+    }
+
+    if (
+      rawDashboardCardOrder !== undefined &&
+      (!Array.isArray(rawDashboardCardOrder) || rawDashboardCardOrder.some((item) => typeof item !== 'string'))
+    ) {
+      res.status(400).json({ error: 'dashboardCardOrder must be an array of strings' });
+      return;
+    }
+
+    if (
+      rawHiddenDashboardCards !== undefined &&
+      (!Array.isArray(rawHiddenDashboardCards) || rawHiddenDashboardCards.some((item) => typeof item !== 'string'))
+    ) {
+      res.status(400).json({ error: 'hiddenDashboardCards must be an array of strings' });
+      return;
+    }
+
     const preferences = deps.userPreferencesRepository.upsertPreferences({
       userId: auth.sub,
       darkMode: typeof req.body?.darkMode === 'boolean' ? req.body.darkMode : undefined,
@@ -94,7 +175,16 @@ export function userRouter(deps: UserRouterDeps): Router {
       showRadarLayer: typeof req.body?.showRadarLayer === 'boolean' ? req.body.showRadarLayer : undefined,
       showStationLayer:
         typeof req.body?.showStationLayer === 'boolean' ? req.body.showStationLayer : undefined,
-      visibleProviders: rawVisibleProviders
+      weatherVisualTone: rawWeatherVisualTone,
+      showWeatherAnimations:
+        typeof rawShowWeatherAnimations === 'boolean' ? rawShowWeatherAnimations : undefined,
+      showMiniCharts: typeof rawShowMiniCharts === 'boolean' ? rawShowMiniCharts : undefined,
+      historyChartMode: rawHistoryChartMode,
+      visibleProviders: rawVisibleProviders,
+      activeWorkspace: rawActiveWorkspace,
+      surfaceStyle: rawSurfaceStyle,
+      dashboardCardOrder: rawDashboardCardOrder,
+      hiddenDashboardCards: rawHiddenDashboardCards
     });
 
     res.status(200).json(preferences);

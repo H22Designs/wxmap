@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  createWeatherStation,
   fetchAdminProviders,
   triggerAdminProviderSync,
   updateAdminProviderConfig,
@@ -7,9 +8,11 @@ import {
   fetchCurrentObservations,
   fetchAdminSettings,
   fetchHealth,
+  fetchProviderStations,
   fetchRadarFrames,
   fetchStationObservations,
   fetchStations,
+  fetchWeatherProviders,
   fetchUserPreferences,
   loginUser,
   registerUser,
@@ -19,6 +22,7 @@ import {
   type AdminSetting,
   type LoginResult,
   type Observation,
+  type ProviderStationCandidate,
   type RadarFrame,
   type RadarFrameDensity,
   type Station,
@@ -33,11 +37,13 @@ import { ProviderActivityLogPanel, type ProviderActivityEntry } from './componen
 import { ProviderStatusPanel } from './components/ProviderStatusPanel';
 import { SessionBadge } from './components/SessionBadge';
 import { StationHistoryChart } from './components/StationHistoryChart';
+import { StationInsightsPanel } from './components/StationInsightsPanel';
 import { StationMap, type MetricKey } from './components/StationMap';
 import { ToastBanner, type Toast } from './components/ToastBanner';
 import { UserExperiencePanel, type UnitSystem } from './components/UserExperiencePanel';
 import { sectionGridStyle, twoColumnGridStyle } from './styles/ui';
 import { connectProviderStatusStream } from './services/realtime';
+import { buildPrioritizedProviders, sortStationsByProviderPriority } from './services/providerPriority';
 import {
   clearProviderActivity,
   loadProviderActivity,
@@ -51,7 +57,29 @@ const UNIT_SYSTEM_STORAGE_KEY = 'wxmap.unitSystem.v1';
 const SHOW_RADAR_LAYER_STORAGE_KEY = 'wxmap.showRadarLayer.v1';
 const SHOW_STATION_LAYER_STORAGE_KEY = 'wxmap.showStationLayer.v1';
 const VISIBLE_PROVIDERS_STORAGE_KEY = 'wxmap.visibleProviders.v1';
+const WORKSPACE_VIEW_STORAGE_KEY = 'wxmap.workspaceView.v1';
+const SURFACE_STYLE_STORAGE_KEY = 'wxmap.surfaceStyle.v1';
+const DASHBOARD_CARD_ORDER_STORAGE_KEY = 'wxmap.dashboardCardOrder.v1';
+const DASHBOARD_CARD_HIDDEN_STORAGE_KEY = 'wxmap.dashboardCardHidden.v1';
+const DASHBOARD_CARD_COLLAPSED_STORAGE_KEY = 'wxmap.dashboardCardCollapsed.v1';
 const MAX_PROVIDER_ACTIVITY = 25;
+
+type WorkspaceView = 'dashboard' | 'explore' | 'admin';
+type SurfaceStyle = 'glass' | 'elevated' | 'neo';
+type DashboardCardId = 'map-controls' | 'experience' | 'map' | 'history';
+type ToastAction =
+  | {
+      kind: 'open-station-overview';
+      stationId: string;
+    }
+  | null;
+
+const DEFAULT_DASHBOARD_CARD_ORDER: DashboardCardId[] = [
+  'map-controls',
+  'experience',
+  'map',
+  'history'
+];
 
 export function App(): JSX.Element {
   const [health, setHealth] = useState<string>('checking...');
@@ -92,10 +120,21 @@ export function App(): JSX.Element {
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('tempC');
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
   const [mapViewMode, setMapViewMode] = useState<'2d' | '3d'>('2d');
-  const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial');
   const [showRadarLayer, setShowRadarLayer] = useState(true);
   const [showStationLayer, setShowStationLayer] = useState(true);
+  const [weatherVisualTone, setWeatherVisualTone] = useState<'balanced' | 'vivid' | 'minimal'>('balanced');
+  const [showWeatherAnimations, setShowWeatherAnimations] = useState(true);
+  const [showMiniCharts, setShowMiniCharts] = useState(true);
+  const [historyChartMode, setHistoryChartMode] = useState<'line' | 'area'>('line');
   const [visibleProviders, setVisibleProviders] = useState<string[]>([]);
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('dashboard');
+  const [surfaceStyle, setSurfaceStyle] = useState<SurfaceStyle>('glass');
+  const [dashboardCardOrder, setDashboardCardOrder] = useState<DashboardCardId[]>(
+    DEFAULT_DASHBOARD_CARD_ORDER
+  );
+  const [hiddenDashboardCards, setHiddenDashboardCards] = useState<DashboardCardId[]>([]);
+  const [collapsedDashboardCards, setCollapsedDashboardCards] = useState<DashboardCardId[]>([]);
   const [radarFrames, setRadarFrames] = useState<RadarFrame[]>([]);
   const [radarHours, setRadarHours] = useState<1 | 3 | 6 | 12>(3);
   const [radarFrameDensity, setRadarFrameDensity] = useState<RadarFrameDensity>('normal');
@@ -105,14 +144,36 @@ export function App(): JSX.Element {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const [radarStatus, setRadarStatus] = useState<string>('loading...');
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
+  const [stationSearchQuery, setStationSearchQuery] = useState<string>('');
+  const [availableWeatherProviders, setAvailableWeatherProviders] = useState<string[]>([]);
+  const [quickAddProvider, setQuickAddProvider] = useState<string>('');
+  const [quickAddExternalId, setQuickAddExternalId] = useState<string>('');
+  const [quickAddAdvanced, setQuickAddAdvanced] = useState<boolean>(false);
+  const [quickAddCandidates, setQuickAddCandidates] = useState<ProviderStationCandidate[]>([]);
+  const [quickAddSelectedCandidateExternalId, setQuickAddSelectedCandidateExternalId] =
+    useState<string>('');
+  const [quickAddCandidatesStatus, setQuickAddCandidatesStatus] = useState<string>('idle');
+  const [quickAddName, setQuickAddName] = useState<string>('');
+  const [quickAddLat, setQuickAddLat] = useState<string>('');
+  const [quickAddLng, setQuickAddLng] = useState<string>('');
+  const [quickAddElevationM, setQuickAddElevationM] = useState<string>('');
+  const [quickAddStatus, setQuickAddStatus] = useState<string>('idle');
+  const [isQuickAddingStation, setIsQuickAddingStation] = useState<boolean>(false);
+  const [isQuickLookupRunning, setIsQuickLookupRunning] = useState<boolean>(false);
   const [selectedStationHistory, setSelectedStationHistory] = useState<Observation[]>([]);
   const [historyStatus, setHistoryStatus] = useState<string>('no-station-selected');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [toastAction, setToastAction] = useState<ToastAction>(null);
 
-  function showToast(type: Toast['type'], message: string): void {
-    setToast({ type, message });
+  function showToast(
+    type: Toast['type'],
+    message: string,
+    action?: { label: string; value: NonNullable<ToastAction> }
+  ): void {
+    setToast({ type, message, actionLabel: action?.label });
+    setToastAction(action?.value ?? null);
   }
 
   function serializeUserPreferences(input: Omit<UserPreferences, 'userId' | 'updatedAt'>): string {
@@ -122,7 +183,15 @@ export function App(): JSX.Element {
       unitSystem: input.unitSystem,
       showRadarLayer: input.showRadarLayer,
       showStationLayer: input.showStationLayer,
-      visibleProviders: [...input.visibleProviders].sort()
+      weatherVisualTone: input.weatherVisualTone,
+      showWeatherAnimations: input.showWeatherAnimations,
+      showMiniCharts: input.showMiniCharts,
+      historyChartMode: input.historyChartMode,
+      visibleProviders: input.visibleProviders,
+      activeWorkspace: input.activeWorkspace,
+      surfaceStyle: input.surfaceStyle,
+      dashboardCardOrder: input.dashboardCardOrder,
+      hiddenDashboardCards: input.hiddenDashboardCards
     });
   }
 
@@ -132,7 +201,25 @@ export function App(): JSX.Element {
     setUnitSystem(preferences.unitSystem);
     setShowRadarLayer(preferences.showRadarLayer);
     setShowStationLayer(preferences.showStationLayer);
+    setWeatherVisualTone(preferences.weatherVisualTone);
+    setShowWeatherAnimations(preferences.showWeatherAnimations);
+    setShowMiniCharts(preferences.showMiniCharts);
+    setHistoryChartMode(preferences.historyChartMode);
     setVisibleProviders(preferences.visibleProviders);
+    setActiveWorkspace(preferences.activeWorkspace);
+    setSurfaceStyle(preferences.surfaceStyle);
+    setDashboardCardOrder(
+      preferences.dashboardCardOrder.length > 0
+        ? (preferences.dashboardCardOrder.filter((item): item is DashboardCardId =>
+            DEFAULT_DASHBOARD_CARD_ORDER.includes(item as DashboardCardId)
+          ))
+        : DEFAULT_DASHBOARD_CARD_ORDER
+    );
+    setHiddenDashboardCards(
+      preferences.hiddenDashboardCards.filter((item): item is DashboardCardId =>
+        DEFAULT_DASHBOARD_CARD_ORDER.includes(item as DashboardCardId)
+      )
+    );
   }
 
   async function refreshWeatherData(options: { showToasts?: boolean } = {}): Promise<void> {
@@ -241,7 +328,15 @@ export function App(): JSX.Element {
           unitSystem: preferences.unitSystem,
           showRadarLayer: preferences.showRadarLayer,
           showStationLayer: preferences.showStationLayer,
-          visibleProviders: preferences.visibleProviders
+          weatherVisualTone: preferences.weatherVisualTone,
+          showWeatherAnimations: preferences.showWeatherAnimations,
+          showMiniCharts: preferences.showMiniCharts,
+          historyChartMode: preferences.historyChartMode,
+          visibleProviders: preferences.visibleProviders,
+          activeWorkspace: preferences.activeWorkspace,
+          surfaceStyle: preferences.surfaceStyle,
+          dashboardCardOrder: preferences.dashboardCardOrder,
+          hiddenDashboardCards: preferences.hiddenDashboardCards
         })
       );
       setPreferencePersistenceState('saved');
@@ -290,12 +385,25 @@ export function App(): JSX.Element {
       return;
     }
 
-    const timer = window.setTimeout(() => setToast(null), 3000);
-    return () => window.clearTimeout(timer);
+    const timeoutMs = toast.actionLabel ? 8000 : 3000;
+    const timer = window.setTimeout(() => {
+      setToast(null);
+      setToastAction(null);
+    }, timeoutMs);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [toast]);
 
   useEffect(() => {
     void refreshWeatherData();
+    void fetchWeatherProviders()
+      .then((items) => {
+        setAvailableWeatherProviders(items);
+      })
+      .catch(() => {
+        setAvailableWeatherProviders([]);
+      });
 
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
 
@@ -355,6 +463,64 @@ export function App(): JSX.Element {
         // Ignore malformed persisted preferences
       }
     }
+
+    const savedWorkspaceView = window.localStorage.getItem(WORKSPACE_VIEW_STORAGE_KEY);
+    if (savedWorkspaceView === 'dashboard' || savedWorkspaceView === 'explore' || savedWorkspaceView === 'admin') {
+      setActiveWorkspace(savedWorkspaceView);
+    }
+
+    const savedSurfaceStyle = window.localStorage.getItem(SURFACE_STYLE_STORAGE_KEY);
+    if (savedSurfaceStyle === 'glass' || savedSurfaceStyle === 'elevated' || savedSurfaceStyle === 'neo') {
+      setSurfaceStyle(savedSurfaceStyle);
+    }
+
+    const savedDashboardCardOrder = window.localStorage.getItem(DASHBOARD_CARD_ORDER_STORAGE_KEY);
+    if (savedDashboardCardOrder) {
+      try {
+        const parsed = JSON.parse(savedDashboardCardOrder) as DashboardCardId[];
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter((item): item is DashboardCardId =>
+            DEFAULT_DASHBOARD_CARD_ORDER.includes(item as DashboardCardId)
+          );
+          const missing = DEFAULT_DASHBOARD_CARD_ORDER.filter((item) => !valid.includes(item));
+          if (valid.length > 0) {
+            setDashboardCardOrder([...valid, ...missing]);
+          }
+        }
+      } catch {
+        // Ignore malformed dashboard card order
+      }
+    }
+
+    const savedHiddenDashboardCards = window.localStorage.getItem(DASHBOARD_CARD_HIDDEN_STORAGE_KEY);
+    if (savedHiddenDashboardCards) {
+      try {
+        const parsed = JSON.parse(savedHiddenDashboardCards) as DashboardCardId[];
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter((item): item is DashboardCardId =>
+            DEFAULT_DASHBOARD_CARD_ORDER.includes(item as DashboardCardId)
+          );
+          setHiddenDashboardCards(Array.from(new Set(valid)));
+        }
+      } catch {
+        // Ignore malformed hidden dashboard cards
+      }
+    }
+
+    const savedCollapsedDashboardCards = window.localStorage.getItem(DASHBOARD_CARD_COLLAPSED_STORAGE_KEY);
+    if (savedCollapsedDashboardCards) {
+      try {
+        const parsed = JSON.parse(savedCollapsedDashboardCards) as DashboardCardId[];
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter((item): item is DashboardCardId =>
+            DEFAULT_DASHBOARD_CARD_ORDER.includes(item as DashboardCardId)
+          );
+          setCollapsedDashboardCards(Array.from(new Set(valid)));
+        }
+      } catch {
+        // Ignore malformed collapsed dashboard cards
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -394,6 +560,29 @@ export function App(): JSX.Element {
   useEffect(() => {
     window.localStorage.setItem(VISIBLE_PROVIDERS_STORAGE_KEY, JSON.stringify(visibleProviders));
   }, [visibleProviders]);
+
+  useEffect(() => {
+    window.localStorage.setItem(WORKSPACE_VIEW_STORAGE_KEY, activeWorkspace);
+  }, [activeWorkspace]);
+
+  useEffect(() => {
+    window.localStorage.setItem(SURFACE_STYLE_STORAGE_KEY, surfaceStyle);
+  }, [surfaceStyle]);
+
+  useEffect(() => {
+    window.localStorage.setItem(DASHBOARD_CARD_ORDER_STORAGE_KEY, JSON.stringify(dashboardCardOrder));
+  }, [dashboardCardOrder]);
+
+  useEffect(() => {
+    window.localStorage.setItem(DASHBOARD_CARD_HIDDEN_STORAGE_KEY, JSON.stringify(hiddenDashboardCards));
+  }, [hiddenDashboardCards]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      DASHBOARD_CARD_COLLAPSED_STORAGE_KEY,
+      JSON.stringify(collapsedDashboardCards)
+    );
+  }, [collapsedDashboardCards]);
 
   useEffect(() => {
     if (!session) {
@@ -488,6 +677,16 @@ export function App(): JSX.Element {
   }, [session]);
 
   useEffect(() => {
+    if (activeWorkspace !== 'admin') {
+      return;
+    }
+
+    if (session?.user.role !== 'admin') {
+      setActiveWorkspace('dashboard');
+    }
+  }, [activeWorkspace, session]);
+
+  useEffect(() => {
     if (!session || !isUserPreferencesHydrated) {
       return;
     }
@@ -498,7 +697,15 @@ export function App(): JSX.Element {
       unitSystem,
       showRadarLayer,
       showStationLayer,
-      visibleProviders
+      weatherVisualTone,
+      showWeatherAnimations,
+      showMiniCharts,
+      historyChartMode,
+      visibleProviders,
+      activeWorkspace,
+      surfaceStyle,
+      dashboardCardOrder,
+      hiddenDashboardCards
     });
 
     if (nextSignature === lastSyncedPreferencesSignature) {
@@ -515,7 +722,15 @@ export function App(): JSX.Element {
         unitSystem,
         showRadarLayer,
         showStationLayer,
-        visibleProviders
+        weatherVisualTone,
+        showWeatherAnimations,
+        showMiniCharts,
+        historyChartMode,
+        visibleProviders,
+        activeWorkspace,
+        surfaceStyle,
+        dashboardCardOrder,
+        hiddenDashboardCards
       })
         .then((preferences) => {
           setLastSyncedPreferencesSignature(
@@ -525,7 +740,15 @@ export function App(): JSX.Element {
               unitSystem: preferences.unitSystem,
               showRadarLayer: preferences.showRadarLayer,
               showStationLayer: preferences.showStationLayer,
-              visibleProviders: preferences.visibleProviders
+              weatherVisualTone: preferences.weatherVisualTone,
+              showWeatherAnimations: preferences.showWeatherAnimations,
+              showMiniCharts: preferences.showMiniCharts,
+              historyChartMode: preferences.historyChartMode,
+              visibleProviders: preferences.visibleProviders,
+              activeWorkspace: preferences.activeWorkspace,
+              surfaceStyle: preferences.surfaceStyle,
+              dashboardCardOrder: preferences.dashboardCardOrder,
+              hiddenDashboardCards: preferences.hiddenDashboardCards
             })
           );
           setPreferencePersistenceState('saved');
@@ -551,7 +774,15 @@ export function App(): JSX.Element {
     unitSystem,
     showRadarLayer,
     showStationLayer,
+    weatherVisualTone,
+    showWeatherAnimations,
+    showMiniCharts,
+    historyChartMode,
     visibleProviders,
+    activeWorkspace,
+    surfaceStyle,
+    dashboardCardOrder,
+    hiddenDashboardCards,
     lastSyncedPreferencesSignature
   ]);
 
@@ -826,6 +1057,21 @@ export function App(): JSX.Element {
     return ['all', ...Array.from(providers).sort()];
   }, [stations]);
 
+  const prioritizedProviderOptions = useMemo(() => {
+    const providers = providerOptions.filter((provider) => provider !== 'all');
+    const prioritized = buildPrioritizedProviders({
+      providers,
+      visibleProviders
+    });
+
+    return ['all', ...prioritized];
+  }, [providerOptions, visibleProviders]);
+
+  const quickAddProviderOptions = useMemo(() => {
+    const known = providerOptions.filter((provider) => provider !== 'all');
+    return Array.from(new Set([...availableWeatherProviders, ...known])).sort();
+  }, [availableWeatherProviders, providerOptions]);
+
   const lastDataRefreshLabel = useMemo(() => {
     if (!lastDataRefreshAt) {
       return 'never';
@@ -833,6 +1079,37 @@ export function App(): JSX.Element {
 
     return new Date(lastDataRefreshAt).toLocaleTimeString();
   }, [lastDataRefreshAt]);
+
+  const surfaceTokens = useMemo(() => {
+    if (surfaceStyle === 'elevated') {
+      return {
+        border: darkMode ? '#334155' : '#cbd5e1',
+        surface: darkMode ? '#0f172a' : '#ffffff',
+        surfaceStrong: darkMode ? '#111827' : '#f8fafc',
+        shellShadow: darkMode ? '0 18px 42px rgba(2, 6, 23, 0.44)' : '0 16px 36px rgba(15, 23, 42, 0.14)'
+      };
+    }
+
+    if (surfaceStyle === 'neo') {
+      return {
+        border: darkMode ? '#1f2937' : '#dbeafe',
+        surface: darkMode ? '#0b1220' : '#eef2ff',
+        surfaceStrong: darkMode ? '#111827' : '#f8fafc',
+        shellShadow: darkMode ? '12px 12px 28px rgba(2, 6, 23, 0.45)' : '12px 12px 26px rgba(148, 163, 184, 0.35)'
+      };
+    }
+
+    return {
+      border: darkMode ? '#334155' : '#d1d5db',
+      surface: darkMode ? 'rgba(17, 24, 39, 0.72)' : 'rgba(255, 255, 255, 0.74)',
+      surfaceStrong: darkMode ? 'rgba(11, 18, 32, 0.78)' : 'rgba(248, 250, 252, 0.85)',
+      shellShadow: darkMode ? '0 18px 46px rgba(2, 6, 23, 0.52)' : '0 16px 34px rgba(15, 23, 42, 0.12)'
+    };
+  }, [darkMode, surfaceStyle]);
+
+  const isDashboardWorkspace = activeWorkspace === 'dashboard';
+  const isExploreWorkspace = activeWorkspace === 'explore';
+  const isAdminWorkspace = activeWorkspace === 'admin';
 
   useEffect(() => {
     const stationProviders = providerOptions.filter((provider) => provider !== 'all');
@@ -853,18 +1130,86 @@ export function App(): JSX.Element {
     });
   }, [providerOptions]);
 
+  useEffect(() => {
+    if (!prioritizedProviderOptions.includes(selectedProvider)) {
+      setSelectedProvider('all');
+    }
+  }, [prioritizedProviderOptions, selectedProvider]);
+
+  useEffect(() => {
+    if (quickAddProviderOptions.length === 0) {
+      setQuickAddProvider('');
+      return;
+    }
+
+    if (!quickAddProviderOptions.includes(quickAddProvider)) {
+      setQuickAddProvider(quickAddProviderOptions[0]);
+    }
+  }, [quickAddProviderOptions, quickAddProvider]);
+
+  useEffect(() => {
+    const provider = quickAddProvider.trim().toLowerCase();
+
+    if (!provider) {
+      setQuickAddCandidates([]);
+      setQuickAddSelectedCandidateExternalId('');
+      setQuickAddCandidatesStatus('idle');
+      return;
+    }
+
+    setQuickAddCandidatesStatus('loading...');
+
+    void fetchProviderStations({
+      provider,
+      query: quickAddExternalId,
+      limit: 75
+    })
+      .then((items) => {
+        setQuickAddCandidates(items);
+        setQuickAddCandidatesStatus(items.length > 0 ? `loaded (${items.length})` : 'empty');
+      })
+      .catch(() => {
+        setQuickAddCandidates([]);
+        setQuickAddCandidatesStatus('error');
+      });
+  }, [quickAddProvider, quickAddExternalId]);
+
+  useEffect(() => {
+    if (!quickAddSelectedCandidateExternalId) {
+      return;
+    }
+
+    const selected = quickAddCandidates.find(
+      (item) => item.externalId.toLowerCase() === quickAddSelectedCandidateExternalId.toLowerCase()
+    );
+
+    if (!selected) {
+      return;
+    }
+
+    setQuickAddExternalId(selected.externalId);
+    setQuickAddName(selected.name);
+    setQuickAddLat(String(selected.lat));
+    setQuickAddLng(String(selected.lng));
+    setQuickAddElevationM(selected.elevationM === null ? '' : String(selected.elevationM));
+  }, [quickAddSelectedCandidateExternalId, quickAddCandidates]);
+
   const filteredStations = useMemo(() => {
     const byProviderSelection =
       selectedProvider === 'all'
         ? stations
         : stations.filter((station) => station.provider === selectedProvider);
 
-    if (visibleProviders.length === 0) {
-      return byProviderSelection;
-    }
+    const byVisibility =
+      visibleProviders.length === 0
+        ? byProviderSelection
+        : byProviderSelection.filter((station) => visibleProviders.includes(station.provider));
 
-    return byProviderSelection.filter((station) => visibleProviders.includes(station.provider));
-  }, [stations, selectedProvider, visibleProviders]);
+    return sortStationsByProviderPriority({
+      stations: byVisibility,
+      prioritizedProviders: prioritizedProviderOptions.filter((provider) => provider !== 'all')
+    });
+  }, [stations, selectedProvider, visibleProviders, prioritizedProviderOptions]);
 
   useEffect(() => {
     if (filteredStations.length === 0) {
@@ -903,6 +1248,177 @@ export function App(): JSX.Element {
     [stations, selectedStationId]
   );
 
+  const selectedStationCurrent = useMemo(
+    () => (selectedStationId ? currentByStationId[selectedStationId] : undefined),
+    [currentByStationId, selectedStationId]
+  );
+
+  const stationPickerOptions = useMemo(() => {
+    const normalizedQuery = stationSearchQuery.trim().toLowerCase();
+    const sorted = [...stations].sort((left, right) => {
+      const byProvider = left.provider.localeCompare(right.provider);
+      if (byProvider !== 0) {
+        return byProvider;
+      }
+
+      const byName = left.name.localeCompare(right.name);
+      if (byName !== 0) {
+        return byName;
+      }
+
+      return left.id.localeCompare(right.id);
+    });
+
+    if (!normalizedQuery) {
+      return sorted;
+    }
+
+    return sorted.filter((station) => {
+      const target = `${station.name} ${station.provider} ${station.externalId}`.toLowerCase();
+      return target.includes(normalizedQuery);
+    });
+  }, [stations, stationSearchQuery]);
+
+  const quickAddResolvedCandidate = useMemo(() => {
+    const externalId = quickAddExternalId.trim().toLowerCase();
+
+    if (!externalId) {
+      return null;
+    }
+
+    return (
+      quickAddCandidates.find((item) => item.externalId.toLowerCase() === externalId) ??
+      null
+    );
+  }, [quickAddCandidates, quickAddExternalId]);
+
+  const quickAddSavedCandidates = useMemo(
+    () => quickAddCandidates.filter((item) => item.inDatabase),
+    [quickAddCandidates]
+  );
+
+  const quickAddUnsavedCandidates = useMemo(
+    () => quickAddCandidates.filter((item) => !item.inDatabase),
+    [quickAddCandidates]
+  );
+
+  const quickAddManualLat = Number(quickAddLat);
+  const quickAddManualLng = Number(quickAddLng);
+  const hasQuickAddManualLocation =
+    quickAddAdvanced &&
+    quickAddLat.trim().length > 0 &&
+    quickAddLng.trim().length > 0 &&
+    Number.isFinite(quickAddManualLat) &&
+    Number.isFinite(quickAddManualLng) &&
+    quickAddManualLat >= -90 &&
+    quickAddManualLat <= 90 &&
+    quickAddManualLng >= -180 &&
+    quickAddManualLng <= 180;
+
+  const quickAddNeedsResolvableLocation =
+    quickAddProvider.trim().length > 0 &&
+    quickAddExternalId.trim().length > 0 &&
+    !quickAddResolvedCandidate &&
+    !hasQuickAddManualLocation;
+
+  const quickAddCanSubmit =
+    !isQuickAddingStation &&
+    Boolean(session) &&
+    quickAddProviderOptions.length > 0 &&
+    quickAddProvider.trim().length > 0 &&
+    quickAddExternalId.trim().length > 0 &&
+    !quickAddNeedsResolvableLocation;
+
+  const quickAddActionLabel = useMemo(() => {
+    const provider = quickAddProvider.trim().toLowerCase();
+    const externalId = quickAddExternalId.trim();
+
+    if (!provider || !externalId) {
+      return 'Add station';
+    }
+
+    return quickAddResolvedCandidate
+      ? `Add ${quickAddResolvedCandidate.externalId}`
+      : `Add ${externalId}`;
+  }, [quickAddProvider, quickAddExternalId, quickAddResolvedCandidate]);
+
+  const quickAddGuidance = useMemo(() => {
+    if (!session) {
+      return 'Log in to add stations.';
+    }
+
+    if (!quickAddProvider.trim()) {
+      return 'Pick a source provider.';
+    }
+
+    if (!quickAddExternalId.trim()) {
+      return 'Select a station/site from the source list, or enter station ID/call sign.';
+    }
+
+    if (quickAddResolvedCandidate) {
+      return quickAddResolvedCandidate.inDatabase
+        ? 'This station is already saved. Add will focus/select it.'
+        : 'This station will be saved and shown on the map.';
+    }
+
+    if (hasQuickAddManualLocation) {
+      return 'Manual location provided. Station can be added.';
+    }
+
+    if (quickAddCandidatesStatus === 'loading...') {
+      return 'Looking up station metadata from source...';
+    }
+
+    return 'No source match yet. Pick from available stations or add optional location details.';
+  }, [
+    session,
+    quickAddProvider,
+    quickAddExternalId,
+    quickAddResolvedCandidate,
+    hasQuickAddManualLocation,
+    quickAddCandidatesStatus
+  ]);
+
+  const selectedStationFreshness = useMemo(() => {
+    if (!selectedStationCurrent?.observedAt) {
+      return { label: 'No live sample', color: '#6b7280', background: '#f3f4f6' };
+    }
+
+    const observedAtMs = new Date(selectedStationCurrent.observedAt).getTime();
+
+    if (!Number.isFinite(observedAtMs)) {
+      return { label: 'Timestamp invalid', color: '#991b1b', background: '#fee2e2' };
+    }
+
+    const ageMinutes = Math.max(0, (Date.now() - observedAtMs) / 60_000);
+
+    if (ageMinutes <= 5) {
+      return { label: 'Live (≤5m)', color: '#065f46', background: '#d1fae5' };
+    }
+
+    if (ageMinutes <= 20) {
+      return { label: 'Recent (≤20m)', color: '#92400e', background: '#fef3c7' };
+    }
+
+    return { label: 'Stale (>20m)', color: '#991b1b', background: '#fee2e2' };
+  }, [selectedStationCurrent]);
+
+  function formatKpiMetric(label: string, value: string): JSX.Element {
+    return (
+      <div
+        style={{
+          border: '1px solid var(--wx-border, #d1d5db)',
+          borderRadius: 12,
+          padding: '10px 12px',
+          background: 'var(--wx-surface, #ffffff)'
+        }}
+      >
+        <div style={{ fontSize: 12, color: 'var(--wx-muted, #475569)' }}>{label}</div>
+        <div style={{ fontWeight: 700, marginTop: 2 }}>{value}</div>
+      </div>
+    );
+  }
+
   function getMetricLabel(metric: MetricKey, current: CurrentObservation | undefined): string {
     if (!current) {
       return `${metric}: N/A`;
@@ -931,6 +1447,270 @@ export function App(): JSX.Element {
       : `Wind: ${current.windSpeedMs.toFixed(1)} m/s`;
   }
 
+  const dashboardCardLabels: Record<DashboardCardId, string> = {
+    'map-controls': 'Map controls',
+    experience: 'Experience',
+    map: 'Map canvas',
+    history: 'History chart'
+  };
+
+  function toggleDashboardCardVisibility(cardId: DashboardCardId): void {
+    setHiddenDashboardCards((previous) =>
+      previous.includes(cardId)
+        ? previous.filter((item) => item !== cardId)
+        : [...previous, cardId]
+    );
+  }
+
+  function moveDashboardCard(cardId: DashboardCardId, direction: 'up' | 'down'): void {
+    setDashboardCardOrder((previous) => {
+      const currentIndex = previous.indexOf(cardId);
+
+      if (currentIndex === -1) {
+        return previous;
+      }
+
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+      if (targetIndex < 0 || targetIndex >= previous.length) {
+        return previous;
+      }
+
+      const next = [...previous];
+      const [moved] = next.splice(currentIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  }
+
+  function toggleDashboardCardCollapsed(cardId: DashboardCardId): void {
+    setCollapsedDashboardCards((previous) =>
+      previous.includes(cardId)
+        ? previous.filter((item) => item !== cardId)
+        : [...previous, cardId]
+    );
+  }
+
+  async function handleQuickAddStation(): Promise<void> {
+    if (isQuickAddingStation) {
+      return;
+    }
+
+    if (!session) {
+      setQuickAddStatus('Login required');
+      showToast('error', 'Please log in before adding a station.');
+      return;
+    }
+
+    const provider = quickAddProvider.trim().toLowerCase();
+    const externalId = quickAddExternalId.trim();
+
+    if (!provider) {
+      setQuickAddStatus('Select a source');
+      return;
+    }
+
+    if (!externalId) {
+      setQuickAddStatus('Station ID/callsign required');
+      return;
+    }
+
+    const existedBefore = stations.some(
+      (station) => station.provider === provider && station.externalId.toLowerCase() === externalId.toLowerCase()
+    );
+
+    const payload: {
+      accessToken: string;
+      provider: string;
+      externalId: string;
+      name?: string;
+      lat?: number;
+      lng?: number;
+      elevationM?: number | null;
+    } = {
+      accessToken: session.accessToken,
+      provider,
+      externalId
+    };
+
+    const selectedCandidate = quickAddCandidates.find(
+      (item) => item.externalId.toLowerCase() === externalId.toLowerCase()
+    );
+
+    if (selectedCandidate) {
+      payload.name = selectedCandidate.name;
+      payload.lat = selectedCandidate.lat;
+      payload.lng = selectedCandidate.lng;
+      payload.elevationM = selectedCandidate.elevationM;
+    }
+
+    if (quickAddAdvanced) {
+      const name = quickAddName.trim();
+      const lat = Number(quickAddLat);
+      const lng = Number(quickAddLng);
+      const elevation = quickAddElevationM.trim();
+
+      if (name) {
+        payload.name = name;
+      }
+
+      if (quickAddLat.trim()) {
+        payload.lat = lat;
+      }
+
+      if (quickAddLng.trim()) {
+        payload.lng = lng;
+      }
+
+      if (elevation) {
+        const elevationM = Number(elevation);
+        if (Number.isFinite(elevationM)) {
+          payload.elevationM = elevationM;
+        }
+      }
+    }
+
+    setIsQuickAddingStation(true);
+    setQuickAddStatus('Adding station...');
+
+    try {
+      const created = await createWeatherStation(payload);
+      setSelectedStationId(created.id);
+      setSelectedProvider('all');
+      setVisibleProviders((previous) =>
+        previous.includes(created.provider) ? previous : [...previous, created.provider]
+      );
+      setShowStationLayer(true);
+      setStationSearchQuery('');
+      setQuickAddExternalId('');
+      setQuickAddSelectedCandidateExternalId('');
+      setQuickAddName('');
+      setQuickAddLat('');
+      setQuickAddLng('');
+      setQuickAddElevationM('');
+      setQuickAddStatus(existedBefore ? 'Already existed in database — focused station' : 'Station saved to database');
+      showToast(
+        'success',
+        existedBefore
+          ? 'Station already existed in database. Focus updated.'
+          : 'Station saved and visible on the map.'
+      );
+      await refreshWeatherData();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Add station failed';
+
+      if (message.toLowerCase().includes('lat is required') || message.toLowerCase().includes('lng is required')) {
+        setQuickAddAdvanced(true);
+      }
+
+      setQuickAddStatus(message);
+      showToast('error', 'Could not add station. Add optional location details and try again.');
+    } finally {
+      setIsQuickAddingStation(false);
+    }
+  }
+
+  async function handleAutoLookupStation(): Promise<void> {
+    if (isQuickLookupRunning) {
+      return;
+    }
+
+    const provider = quickAddProvider.trim().toLowerCase();
+    const externalId = quickAddExternalId.trim();
+
+    if (!provider) {
+      setQuickAddStatus('Select a source first');
+      return;
+    }
+
+    if (!externalId) {
+      setQuickAddStatus('Enter station ID/call sign first');
+      return;
+    }
+
+    setIsQuickLookupRunning(true);
+    setQuickAddStatus('Looking up station metadata...');
+
+    try {
+      const candidates = await fetchProviderStations({
+        provider,
+        query: externalId,
+        limit: 25
+      });
+
+      setQuickAddCandidates(candidates);
+
+      const exact = candidates.find(
+        (item) => item.externalId.toLowerCase() === externalId.toLowerCase()
+      );
+      const selected = exact ?? candidates[0];
+
+      if (!selected) {
+        setQuickAddStatus('No station match found from source lookup');
+        showToast('info', 'No station metadata found. You can still add optional location details manually.');
+        return;
+      }
+
+      setQuickAddSelectedCandidateExternalId(selected.externalId);
+      setQuickAddExternalId(selected.externalId);
+      setQuickAddName(selected.name);
+      setQuickAddLat(String(selected.lat));
+      setQuickAddLng(String(selected.lng));
+      setQuickAddElevationM(selected.elevationM === null ? '' : String(selected.elevationM));
+
+      setQuickAddStatus(
+        selected.inDatabase
+          ? `Match found: ${selected.externalId} (already saved)`
+          : `Match found: ${selected.externalId}`
+      );
+      showToast('success', `Auto lookup matched ${selected.name} (${selected.externalId}).`);
+    } catch {
+      setQuickAddStatus('Auto lookup failed. Try again or use optional details.');
+      showToast('error', 'Auto lookup failed for this provider right now.');
+    } finally {
+      setIsQuickLookupRunning(false);
+    }
+  }
+
+  function handleStationSelectFromMap(stationId: string): void {
+    setSelectedStationId(stationId);
+
+    const station = stations.find((item) => item.id === stationId);
+    const current = currentByStationId[stationId];
+
+    if (!station) {
+      return;
+    }
+
+    const metricSummary = getMetricLabel(selectedMetric, current);
+    showToast(
+      'info',
+      `${station.name} · ${station.provider} · ${metricSummary}`,
+      {
+        label: 'View detailed overview',
+        value: {
+          kind: 'open-station-overview',
+          stationId
+        }
+      }
+    );
+  }
+
+  function handleToastAction(): void {
+    if (!toastAction) {
+      return;
+    }
+
+    if (toastAction.kind === 'open-station-overview') {
+      setSelectedStationId(toastAction.stationId);
+      setActiveWorkspace('dashboard');
+      setHiddenDashboardCards((previous) => previous.filter((item) => item !== 'history'));
+      setShowStationLayer(true);
+      setToast(null);
+      setToastAction(null);
+    }
+  }
+
   return (
     <main
       style={{
@@ -941,14 +1721,15 @@ export function App(): JSX.Element {
           ? 'radial-gradient(circle at top, #1e293b 0%, #0f172a 55%, #020617 100%)'
           : 'radial-gradient(circle at top, #f8fbff 0%, #eef2ff 45%, #e2e8f0 100%)',
         color: darkMode ? '#e2e8f0' : '#0f172a',
-        ['--wx-border' as string]: darkMode ? '#334155' : '#d1d5db',
-        ['--wx-surface' as string]: darkMode ? '#111827' : '#ffffff',
-        ['--wx-surface-strong' as string]: darkMode ? '#0b1220' : '#f8fafc',
+        ['--wx-border' as string]: surfaceTokens.border,
+        ['--wx-surface' as string]: surfaceTokens.surface,
+        ['--wx-surface-strong' as string]: surfaceTokens.surfaceStrong,
         ['--wx-skeleton-start' as string]: darkMode ? '#1f2937' : '#f3f4f6',
         ['--wx-skeleton-mid' as string]: darkMode ? '#334155' : '#e5e7eb',
         ['--wx-text' as string]: darkMode ? '#e2e8f0' : '#111827',
         ['--wx-muted' as string]: darkMode ? '#94a3b8' : '#475569',
-        ['--wx-accent' as string]: darkMode ? '#93c5fd' : '#2563eb'
+        ['--wx-accent' as string]: darkMode ? '#93c5fd' : '#2563eb',
+        ['--wx-shell-shadow' as string]: surfaceTokens.shellShadow
       }}
       aria-busy={stationsStatus === 'loading...' || isAuthSubmitting || isAdminLoading}
     >
@@ -988,6 +1769,28 @@ export function App(): JSX.Element {
           width: min(1280px, 100%);
           margin: 0 auto;
         }
+        .wx-workspace-switcher {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+          margin: 10px 0 14px;
+          padding: 10px;
+          border-radius: 14px;
+          background: var(--wx-surface-strong, #f8fafc);
+          border: 1px solid var(--wx-border, #d1d5db);
+          box-shadow: var(--wx-shell-shadow, 0 10px 24px rgba(15,23,42,0.1));
+          backdrop-filter: blur(10px);
+        }
+        .wx-workspace-btn[data-active='true'] {
+          background: ${darkMode ? '#2563eb' : '#1d4ed8'};
+          color: #fff;
+          border-color: transparent;
+        }
+        .wx-view-shell {
+          display: grid;
+          gap: 14px;
+        }
         .wx-header-title {
           font-size: clamp(1.8rem, 2.7vw, 2.6rem);
           margin: 0;
@@ -1005,6 +1808,64 @@ export function App(): JSX.Element {
           margin-bottom: 10px;
           color: var(--wx-muted, #475569);
           font-size: 0.97rem;
+        }
+        .wx-card-shell {
+          border: 1px solid var(--wx-border, #d1d5db);
+          border-radius: 14px;
+          background: var(--wx-surface, #ffffff);
+          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+          overflow: hidden;
+        }
+        .wx-card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          padding: 10px 12px;
+          background: var(--wx-surface-strong, #f8fafc);
+          border-bottom: 1px solid var(--wx-border, #d1d5db);
+        }
+        .wx-card-body {
+          padding: 12px;
+          display: grid;
+          gap: 12px;
+        }
+        .wx-sticky-controls {
+          position: sticky;
+          top: 8px;
+          z-index: 30;
+        }
+        @media (max-width: 900px) {
+          main {
+            padding: 14px;
+          }
+          .wx-workspace-switcher {
+            position: sticky;
+            top: 8px;
+            z-index: 40;
+          }
+          .wx-card-body {
+            padding: 10px;
+          }
+        }
+        @media (max-width: 640px) {
+          main {
+            padding: 10px;
+          }
+          .wx-workspace-switcher {
+            gap: 6px;
+            padding: 8px;
+          }
+          .wx-workspace-btn {
+            font-size: 13px;
+            padding: 7px 9px;
+          }
+          .wx-header-title {
+            font-size: clamp(1.4rem, 6vw, 1.9rem);
+          }
+          .wx-subtitle {
+            font-size: 0.9rem;
+          }
         }
       `}</style>
       <div className="wx-shell">
@@ -1026,102 +1887,518 @@ export function App(): JSX.Element {
         <p style={{ marginTop: 0, color: 'var(--wx-muted, #475569)' }}>
           Backend status: <strong style={{ color: 'var(--wx-accent, #2563eb)' }}>{health}</strong>
         </p>
-        <section style={sectionGridStyle} aria-labelledby="station-map-heading">
+
+        <div className="wx-workspace-switcher" aria-label="Workspace layout controls">
+          <button
+            type="button"
+            className="wx-workspace-btn"
+            data-active={isDashboardWorkspace}
+            onClick={() => setActiveWorkspace('dashboard')}
+          >
+            Dashboard
+          </button>
+          <button
+            type="button"
+            className="wx-workspace-btn"
+            data-active={isExploreWorkspace}
+            onClick={() => setActiveWorkspace('explore')}
+          >
+            Explore
+          </button>
+          <button
+            type="button"
+            className="wx-workspace-btn"
+            data-active={isAdminWorkspace}
+            onClick={() => setActiveWorkspace('admin')}
+            disabled={session?.user.role !== 'admin'}
+            title={session?.user.role === 'admin' ? 'Open admin workspace' : 'Admin workspace requires admin login'}
+          >
+            Admin
+          </button>
+          <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            Surface style
+            <select
+              value={surfaceStyle}
+              onChange={(event) => setSurfaceStyle(event.target.value as SurfaceStyle)}
+              aria-label="Select surface style"
+            >
+              <option value="glass">Glass</option>
+              <option value="elevated">Elevated</option>
+              <option value="neo">Neo</option>
+            </select>
+          </label>
+        </div>
+
+        {isDashboardWorkspace ? (
+        <section style={sectionGridStyle} aria-labelledby="station-map-heading" className="wx-view-shell">
         <h2 id="station-map-heading" style={{ marginBottom: 0 }}>
-          Station map
+          Dashboard view
         </h2>
         <p style={{ marginTop: 0 }}>
           Station data status: <strong>{stationsStatus}</strong>
         </p>
-        <MapControlPanel
-          selectedMetric={selectedMetric}
-          selectedProvider={selectedProvider}
-          mapViewMode={mapViewMode}
-          providerOptions={providerOptions}
-          radarHours={radarHours}
-          radarFrameDensity={radarFrameDensity}
-          radarSpeedMs={radarSpeedMs}
-          radarOpacity={radarOpacity}
-          radarPlaying={radarPlaying}
-          darkMode={darkMode}
-          radarStatus={radarStatus}
-          isDataRefreshing={isDataRefreshing}
-          lastDataRefreshLabel={lastDataRefreshLabel}
-          autoRefreshSeconds={autoRefreshSeconds}
-          filteredCount={filteredStations.length}
-          totalCount={stations.length}
-          onMetricChange={setSelectedMetric}
-          onProviderChange={setSelectedProvider}
-          onMapViewModeChange={setMapViewMode}
-          onRadarHoursChange={setRadarHours}
-          onRadarFrameDensityChange={setRadarFrameDensity}
-          onRadarSpeedChange={setRadarSpeedMs}
-          onRadarOpacityChange={setRadarOpacity}
-          onToggleRadarPlaying={() => setRadarPlaying((previous) => !previous)}
-          onToggleDarkMode={() => setDarkMode((previous) => !previous)}
-          onRefreshData={() => {
-            void refreshWeatherData({ showToasts: true });
+        <div
+          style={{
+            display: 'grid',
+            gap: 8,
+            gridTemplateColumns: '1fr minmax(220px, 340px)',
+            alignItems: 'end'
           }}
-          onAutoRefreshSecondsChange={setAutoRefreshSeconds}
-        />
-        <UserExperiencePanel
-          darkMode={darkMode}
-          mapViewMode={mapViewMode}
-          unitSystem={unitSystem}
-          showRadarLayer={showRadarLayer}
-          showStationLayer={showStationLayer}
-          providerOptions={providerOptions}
-          visibleProviders={visibleProviders}
-          onToggleDarkMode={() => setDarkMode((previous) => !previous)}
-          onMapViewModeChange={setMapViewMode}
-          onUnitSystemChange={setUnitSystem}
-          onShowRadarLayerChange={setShowRadarLayer}
-          onShowStationLayerChange={setShowStationLayer}
-          onVisibleProvidersChange={(providers) => {
-            const deduped = Array.from(new Set(providers));
-            setVisibleProviders(deduped);
-          }}
-          persistenceState={preferencePersistenceState}
-        />
-        {stationsStatus === 'loading...' ? (
-          <div aria-label="Loading station map" role="status" aria-live="polite" style={{ display: 'grid', gap: 8 }}>
-            <LoadingSkeleton ariaLabel="Loading map summary" />
-            <LoadingSkeleton ariaLabel="Loading map controls" width="85%" />
-            <LoadingSkeleton ariaLabel="Loading map canvas" width="92%" height={320} />
+        >
+          <label style={{ display: 'grid', gap: 4 }}>
+            Find station
+            <input
+              aria-label="Search stations"
+              placeholder="Search by station, provider, or external ID"
+              value={stationSearchQuery}
+              onChange={(event) => setStationSearchQuery(event.target.value)}
+            />
+          </label>
+          <label style={{ display: 'grid', gap: 4 }}>
+            Station focus
+            <select
+              aria-label="Select station focus"
+              value={selectedStationId ?? ''}
+              onChange={(event) => setSelectedStationId(event.target.value || null)}
+            >
+              <option value="">Select a station...</option>
+              {stationPickerOptions.map((station) => (
+                <option key={station.id} value={station.id}>
+                  {station.name} · {station.provider}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px 10px',
+              borderRadius: 999,
+              fontWeight: 700,
+              fontSize: 12,
+              color: selectedStationFreshness.color,
+              background: selectedStationFreshness.background
+            }}
+          >
+            {selectedStationFreshness.label}
+          </span>
+          <span style={{ fontSize: 13, color: 'var(--wx-muted, #475569)' }}>
+            Latest sample:{' '}
+            <strong>
+              {selectedStationCurrent?.observedAt
+                ? new Date(selectedStationCurrent.observedAt).toLocaleTimeString()
+                : '—'}
+            </strong>
+          </span>
+          <span style={{ fontSize: 13, color: 'var(--wx-muted, #475569)' }}>
+            Station source: <strong>{selectedStation?.provider ?? '—'}</strong>
+          </span>
+        </div>
+        <details
+          className="wx-card-shell"
+          style={{ padding: 10, background: 'var(--wx-surface-strong, #f8fafc)' }}
+        >
+          <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+            Customize dashboard layout
+          </summary>
+          <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
+            {dashboardCardOrder.map((cardId, index) => {
+              const isHidden = hiddenDashboardCards.includes(cardId);
+              return (
+                <div
+                  key={cardId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    padding: '6px 8px',
+                    borderRadius: 10,
+                    border: '1px solid var(--wx-border, #d1d5db)',
+                    background: 'var(--wx-surface, #ffffff)'
+                  }}
+                >
+                  <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={!isHidden}
+                      onChange={() => toggleDashboardCardVisibility(cardId)}
+                      aria-label={`Toggle ${dashboardCardLabels[cardId]}`}
+                    />
+                    {dashboardCardLabels[cardId]}
+                  </label>
+                  <div style={{ display: 'inline-flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => moveDashboardCard(cardId, 'up')}
+                      disabled={index === 0}
+                      aria-label={`Move ${dashboardCardLabels[cardId]} up`}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveDashboardCard(cardId, 'down')}
+                      disabled={index === dashboardCardOrder.length - 1}
+                      aria-label={`Move ${dashboardCardLabels[cardId]} down`}
+                    >
+                      ↓
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ) : (
-        <StationMap
-          stations={filteredStations}
-          currentByStationId={currentByStationId}
-          selectedMetric={selectedMetric}
-          mapViewMode={mapViewMode}
-          unitSystem={unitSystem}
-          showRadarLayer={showRadarLayer}
-          showStationLayer={showStationLayer}
-          radarFrames={radarFrames}
-          radarFrameDensity={radarFrameDensity}
-          radarOpacity={radarOpacity}
-          radarSpeedMs={radarSpeedMs}
-          radarPlaying={radarPlaying}
-          darkMode={darkMode}
-          selectedStationId={selectedStationId}
-          onStationSelect={setSelectedStationId}
-        />
-        )}
-        <p>
-          History status: <strong>{historyStatus}</strong>
-        </p>
-        {selectedStation ? (
-          <StationHistoryChart
-            stationName={selectedStation.name}
-            observations={selectedStationHistory}
-            metric={selectedMetric}
-            unitSystem={unitSystem}
-          />
-        ) : null}
+        </details>
+
+        {dashboardCardOrder.map((cardId) => {
+          if (hiddenDashboardCards.includes(cardId)) {
+            return null;
+          }
+
+          const isCollapsed = collapsedDashboardCards.includes(cardId);
+
+          let content: JSX.Element;
+
+          if (cardId === 'map-controls') {
+            content = (
+              <div className="wx-sticky-controls">
+                <MapControlPanel
+                  key={cardId}
+                  selectedMetric={selectedMetric}
+                  selectedProvider={selectedProvider}
+                  mapViewMode={mapViewMode}
+                  providerOptions={prioritizedProviderOptions}
+                  radarHours={radarHours}
+                  radarFrameDensity={radarFrameDensity}
+                  radarSpeedMs={radarSpeedMs}
+                  radarOpacity={radarOpacity}
+                  radarPlaying={radarPlaying}
+                  darkMode={darkMode}
+                  radarStatus={radarStatus}
+                  isDataRefreshing={isDataRefreshing}
+                  lastDataRefreshLabel={lastDataRefreshLabel}
+                  autoRefreshSeconds={autoRefreshSeconds}
+                  filteredCount={filteredStations.length}
+                  totalCount={stations.length}
+                  onMetricChange={setSelectedMetric}
+                  onProviderChange={setSelectedProvider}
+                  onMapViewModeChange={setMapViewMode}
+                  onRadarHoursChange={setRadarHours}
+                  onRadarFrameDensityChange={setRadarFrameDensity}
+                  onRadarSpeedChange={setRadarSpeedMs}
+                  onRadarOpacityChange={setRadarOpacity}
+                  onToggleRadarPlaying={() => setRadarPlaying((previous) => !previous)}
+                  onToggleDarkMode={() => setDarkMode((previous) => !previous)}
+                  onRefreshData={() => {
+                    void refreshWeatherData({ showToasts: true });
+                  }}
+                  onAutoRefreshSecondsChange={setAutoRefreshSeconds}
+                />
+              </div>
+            );
+          } else if (cardId === 'experience') {
+            content = (
+              <UserExperiencePanel
+                key={cardId}
+                darkMode={darkMode}
+                mapViewMode={mapViewMode}
+                unitSystem={unitSystem}
+                showRadarLayer={showRadarLayer}
+                showStationLayer={showStationLayer}
+                weatherVisualTone={weatherVisualTone}
+                showWeatherAnimations={showWeatherAnimations}
+                showMiniCharts={showMiniCharts}
+                historyChartMode={historyChartMode}
+                providerOptions={prioritizedProviderOptions}
+                visibleProviders={visibleProviders}
+                onToggleDarkMode={() => setDarkMode((previous) => !previous)}
+                onMapViewModeChange={setMapViewMode}
+                onUnitSystemChange={setUnitSystem}
+                onShowRadarLayerChange={setShowRadarLayer}
+                onShowStationLayerChange={setShowStationLayer}
+                onWeatherVisualToneChange={setWeatherVisualTone}
+                onShowWeatherAnimationsChange={setShowWeatherAnimations}
+                onShowMiniChartsChange={setShowMiniCharts}
+                onHistoryChartModeChange={setHistoryChartMode}
+                onVisibleProvidersChange={(providers) => {
+                  const deduped = Array.from(new Set(providers));
+                  setVisibleProviders(deduped);
+                }}
+                persistenceState={preferencePersistenceState}
+              />
+            );
+          } else if (cardId === 'map') {
+            content = stationsStatus === 'loading...' ? (
+              <div key={cardId} aria-label="Loading station map" role="status" aria-live="polite" style={{ display: 'grid', gap: 8 }}>
+                <LoadingSkeleton ariaLabel="Loading map summary" />
+                <LoadingSkeleton ariaLabel="Loading map controls" width="85%" />
+                <LoadingSkeleton ariaLabel="Loading map canvas" width="92%" height={320} />
+              </div>
+            ) : (
+              <StationMap
+                key={cardId}
+                stations={filteredStations}
+                currentByStationId={currentByStationId}
+                selectedMetric={selectedMetric}
+                mapViewMode={mapViewMode}
+                unitSystem={unitSystem}
+                showRadarLayer={showRadarLayer}
+                showStationLayer={showStationLayer}
+                radarFrames={radarFrames}
+                radarFrameDensity={radarFrameDensity}
+                radarOpacity={radarOpacity}
+                radarSpeedMs={radarSpeedMs}
+                radarPlaying={radarPlaying}
+                darkMode={darkMode}
+                selectedStationId={selectedStationId}
+                onStationSelect={handleStationSelectFromMap}
+              />
+            );
+          } else {
+            content = (
+              <div>
+                <StationInsightsPanel
+                  station={selectedStation}
+                  current={selectedStationCurrent}
+                  history={selectedStationHistory}
+                  unitSystem={unitSystem}
+                />
+                <p>
+                  History status: <strong>{historyStatus}</strong>
+                </p>
+                {selectedStation ? (
+                  <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+                    <StationHistoryChart
+                      stationName={selectedStation.name}
+                      observations={selectedStationHistory}
+                      metric="tempC"
+                      unitSystem={unitSystem}
+                    />
+                    <StationHistoryChart
+                      stationName={selectedStation.name}
+                      observations={selectedStationHistory}
+                      metric="humidityPct"
+                      unitSystem={unitSystem}
+                    />
+                    <StationHistoryChart
+                      stationName={selectedStation.name}
+                      observations={selectedStationHistory}
+                      metric="windSpeedMs"
+                      unitSystem={unitSystem}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            );
+          }
+
+          return (
+            <section key={cardId} className="wx-card-shell" aria-label={`${dashboardCardLabels[cardId]} card`}>
+              <div className="wx-card-header">
+                <strong>{dashboardCardLabels[cardId]}</strong>
+                <button
+                  type="button"
+                  onClick={() => toggleDashboardCardCollapsed(cardId)}
+                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${dashboardCardLabels[cardId]}`}
+                  title={isCollapsed ? 'Expand card' : 'Collapse card'}
+                >
+                  {isCollapsed ? '▾' : '▴'}
+                </button>
+              </div>
+              {!isCollapsed ? <div className="wx-card-body">{content}</div> : null}
+            </section>
+          );
+        })}
         </section>
-        <section style={twoColumnGridStyle} aria-label="Stations and authentication panels">
+        ) : null}
+
+        {(isExploreWorkspace || isAdminWorkspace) ? (
+        <section style={twoColumnGridStyle} aria-label="Stations and authentication panels" className="wx-view-shell">
+        {isExploreWorkspace ? (
         <div aria-labelledby="stations-list-heading">
+          <details
+            style={{
+              border: '1px solid var(--wx-border, #d1d5db)',
+              borderRadius: 14,
+              padding: 12,
+              marginBottom: 12,
+              background: 'var(--wx-surface, #ffffff)',
+              display: 'grid',
+              gap: 8
+            }}
+            aria-label="Quick add weather station"
+            open
+          >
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Quick add station</summary>
+            <p style={{ margin: 0, color: 'var(--wx-muted, #475569)', fontSize: 13 }}>
+              Enter source + station ID/call sign. No endpoint knowledge needed.
+            </p>
+            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
+              <label style={{ display: 'grid', gap: 4 }}>
+                Source
+                <select
+                  value={quickAddProvider}
+                  onChange={(event) => setQuickAddProvider(event.target.value)}
+                  aria-label="Quick add source"
+                >
+                  {quickAddProviderOptions.length === 0 ? <option value="">No sources available</option> : null}
+                  {quickAddProviderOptions.map((provider) => (
+                    <option key={provider} value={provider}>
+                      {provider}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 4 }}>
+                Station ID / call sign
+                <input
+                  placeholder="e.g. KSEA or 72493"
+                  value={quickAddExternalId}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setQuickAddExternalId(value);
+
+                    const matched = quickAddCandidates.find(
+                      (item) => item.externalId.toLowerCase() === value.trim().toLowerCase()
+                    );
+
+                    setQuickAddSelectedCandidateExternalId(matched?.externalId ?? '');
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void handleAutoLookupStation();
+                    }
+                  }}
+                  aria-label="Quick add station identifier"
+                />
+              </label>
+              <label style={{ display: 'grid', gap: 4 }}>
+                Available stations from source
+                <select
+                  value={quickAddSelectedCandidateExternalId}
+                  onChange={(event) => setQuickAddSelectedCandidateExternalId(event.target.value)}
+                  aria-label="Select available station from provider"
+                >
+                  <option value="">Choose a station/site…</option>
+                  {quickAddSavedCandidates.length > 0 ? (
+                    <optgroup label="Saved in database">
+                      {quickAddSavedCandidates.map((item) => (
+                        <option key={`${item.provider}:${item.externalId}`} value={item.externalId}>
+                          {item.name} ({item.externalId})
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                  {quickAddUnsavedCandidates.length > 0 ? (
+                    <optgroup label="Available from source">
+                      {quickAddUnsavedCandidates.map((item) => (
+                        <option key={`${item.provider}:${item.externalId}`} value={item.externalId}>
+                          {item.name} ({item.externalId})
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                </select>
+              </label>
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--wx-muted, #475569)' }}>
+              Source station list: <strong>{quickAddCandidatesStatus}</strong>
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleQuickAddStation();
+                }}
+                disabled={!quickAddCanSubmit}
+                title={!session ? 'Login required to add stations' : quickAddNeedsResolvableLocation ? 'Select a source station/site or provide location details first' : 'Add station'}
+              >
+                {isQuickAddingStation ? 'Adding...' : quickAddActionLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleAutoLookupStation();
+                }}
+                disabled={
+                  isQuickLookupRunning ||
+                  quickAddProvider.trim().length === 0 ||
+                  quickAddExternalId.trim().length === 0
+                }
+                title="Resolve station metadata from source"
+              >
+                {isQuickLookupRunning ? 'Looking up...' : 'Auto lookup'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuickAddAdvanced((previous) => !previous)}
+              >
+                {quickAddAdvanced ? 'Hide details' : 'Add optional details'}
+              </button>
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--wx-muted, #475569)' }}>
+              {quickAddResolvedCandidate ? (
+                <>
+                  Ready to add:{' '}
+                  <strong>
+                    {quickAddResolvedCandidate.name} ({quickAddResolvedCandidate.externalId})
+                  </strong>{' '}
+                  from <strong>{quickAddResolvedCandidate.provider}</strong>{' '}
+                  {quickAddResolvedCandidate.inDatabase ? '· already saved' : '· new station'}
+                </>
+              ) : quickAddProvider.trim() && quickAddExternalId.trim() ? (
+                <>
+                  Ready to add: <strong>{quickAddExternalId.trim()}</strong> from{' '}
+                  <strong>{quickAddProvider.trim().toLowerCase()}</strong>
+                </>
+              ) : (
+                'Pick a source station/site or enter a station ID/call sign to preview what will be added.'
+              )}
+            </p>
+            <p style={{ margin: 0, fontSize: 12, color: quickAddCanSubmit ? '#065f46' : '#92400e' }}>
+              {quickAddGuidance}
+            </p>
+            {quickAddAdvanced ? (
+              <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+                <label style={{ display: 'grid', gap: 4 }}>
+                  Name (optional)
+                  <input value={quickAddName} onChange={(event) => setQuickAddName(event.target.value)} />
+                </label>
+                <label style={{ display: 'grid', gap: 4 }}>
+                  Latitude
+                  <input
+                    value={quickAddLat}
+                    onChange={(event) => setQuickAddLat(event.target.value)}
+                    placeholder="47.449"
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 4 }}>
+                  Longitude
+                  <input
+                    value={quickAddLng}
+                    onChange={(event) => setQuickAddLng(event.target.value)}
+                    placeholder="-122.309"
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 4 }}>
+                  Elevation m (optional)
+                  <input
+                    value={quickAddElevationM}
+                    onChange={(event) => setQuickAddElevationM(event.target.value)}
+                    placeholder="132"
+                  />
+                </label>
+              </div>
+            ) : null}
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--wx-muted, #475569)' }}>
+              Status: <strong>{quickAddStatus}</strong>
+            </p>
+          </details>
           <h2 id="stations-list-heading">Stations</h2>
           {stationsStatus === 'loading...' ? (
             <div aria-label="Loading station list" role="status" aria-live="polite" style={{ display: 'grid', gap: 6 }}>
@@ -1159,6 +2436,14 @@ export function App(): JSX.Element {
           </ul>
           )}
         </div>
+        ) : (
+          <div>
+            <h2 style={{ marginBottom: 6 }}>Admin workspace</h2>
+            <p style={{ marginTop: 0, color: 'var(--wx-muted, #475569)' }}>
+              Manage provider operations, settings, and live sync health in a focused view.
+            </p>
+          </div>
+        )}
         <div>
           <AuthPanel
             username={username}
@@ -1247,7 +2532,17 @@ export function App(): JSX.Element {
           />
         </div>
         </section>
-        {toast ? <ToastBanner toast={toast} onClose={() => setToast(null)} /> : null}
+        ) : null}
+        {toast ? (
+          <ToastBanner
+            toast={toast}
+            onAction={toastAction ? handleToastAction : undefined}
+            onClose={() => {
+              setToast(null);
+              setToastAction(null);
+            }}
+          />
+        ) : null}
       </div>
     </main>
   );

@@ -10,8 +10,9 @@ Weather map dashboard with a TypeScript backend and React frontend.
 ## Quick start
 
 1. Install dependencies at the repo root.
-2. Create local env files from the tracked templates.
-3. Start backend and frontend dev servers.
+2. Create local `.env` files from tracked templates.
+3. Start backend and frontend in separate terminals.
+4. Verify health and open the app in your browser.
 
 ### Setup commands (PowerShell)
 
@@ -25,6 +26,25 @@ Weather map dashboard with a TypeScript backend and React frontend.
 Frontend: `http://localhost:5173/`
 
 Backend health: `npm run health:backend`
+
+## Run instructions
+
+Use two terminals from the repository root:
+
+- Terminal 1: `npm run dev:backend`
+- Terminal 2: `npm run dev:frontend`
+
+When both are running:
+
+- Frontend UI: `http://localhost:5173/`
+- Backend health: `http://localhost:3001/api/v1/health`
+
+## Verify everything is working
+
+- Health check command: `npm run health:backend`
+- Type-check/lint: `npm run lint`
+- Tests: `npm test`
+- Production build: `npm run build`
 
 ## Environment
 
@@ -67,3 +87,7 @@ Then restart the backend dev server.
 From repo root, print the current backend health payload:
 
 - `npm run health:backend`
+
+## Additional documentation
+
+- Local development runbook: `docs/running-locally.md`

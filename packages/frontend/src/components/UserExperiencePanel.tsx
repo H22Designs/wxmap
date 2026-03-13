@@ -10,6 +10,10 @@ type UserExperiencePanelProps = {
   unitSystem: UnitSystem;
   showRadarLayer: boolean;
   showStationLayer: boolean;
+  weatherVisualTone: 'balanced' | 'vivid' | 'minimal';
+  showWeatherAnimations: boolean;
+  showMiniCharts: boolean;
+  historyChartMode: 'line' | 'area';
   providerOptions: string[];
   visibleProviders: string[];
   onToggleDarkMode: () => void;
@@ -17,6 +21,10 @@ type UserExperiencePanelProps = {
   onUnitSystemChange: (unitSystem: UnitSystem) => void;
   onShowRadarLayerChange: (value: boolean) => void;
   onShowStationLayerChange: (value: boolean) => void;
+  onWeatherVisualToneChange: (value: 'balanced' | 'vivid' | 'minimal') => void;
+  onShowWeatherAnimationsChange: (value: boolean) => void;
+  onShowMiniChartsChange: (value: boolean) => void;
+  onHistoryChartModeChange: (value: 'line' | 'area') => void;
   onVisibleProvidersChange: (providers: string[]) => void;
   persistenceState?: PreferencesPersistenceState;
 };
@@ -27,6 +35,10 @@ export function UserExperiencePanel({
   unitSystem,
   showRadarLayer,
   showStationLayer,
+  weatherVisualTone,
+  showWeatherAnimations,
+  showMiniCharts,
+  historyChartMode,
   providerOptions,
   visibleProviders,
   onToggleDarkMode,
@@ -34,10 +46,37 @@ export function UserExperiencePanel({
   onUnitSystemChange,
   onShowRadarLayerChange,
   onShowStationLayerChange,
+  onWeatherVisualToneChange,
+  onShowWeatherAnimationsChange,
+  onShowMiniChartsChange,
+  onHistoryChartModeChange,
   onVisibleProvidersChange,
   persistenceState = 'guest'
 }: UserExperiencePanelProps): JSX.Element {
   const providers = providerOptions.filter((provider) => provider !== 'all');
+  const orderedProviders = [
+    ...visibleProviders.filter((provider) => providers.includes(provider)),
+    ...providers.filter((provider) => !visibleProviders.includes(provider))
+  ];
+
+  function moveProviderPriority(provider: string, direction: 'up' | 'down'): void {
+    const currentIndex = visibleProviders.indexOf(provider);
+
+    if (currentIndex === -1) {
+      return;
+    }
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= visibleProviders.length) {
+      return;
+    }
+
+    const next = [...visibleProviders];
+    const [moved] = next.splice(currentIndex, 1);
+    next.splice(targetIndex, 0, moved);
+    onVisibleProvidersChange(next);
+  }
 
   const persistenceLabel =
     persistenceState === 'guest'
@@ -81,6 +120,31 @@ export function UserExperiencePanel({
           </select>
         </label>
 
+        <label style={{ display: 'grid', gap: 4 }}>
+          Weather visuals
+          <select
+            aria-label="Select weather visual style"
+            value={weatherVisualTone}
+            onChange={(event) => onWeatherVisualToneChange(event.target.value as 'balanced' | 'vivid' | 'minimal')}
+          >
+            <option value="balanced">Balanced</option>
+            <option value="vivid">Vivid</option>
+            <option value="minimal">Minimal</option>
+          </select>
+        </label>
+
+        <label style={{ display: 'grid', gap: 4 }}>
+          History chart style
+          <select
+            aria-label="Select history chart style"
+            value={historyChartMode}
+            onChange={(event) => onHistoryChartModeChange(event.target.value as 'line' | 'area')}
+          >
+            <option value="line">Line</option>
+            <option value="area">Area</option>
+          </select>
+        </label>
+
         <div style={{ display: 'grid', gap: 8, alignContent: 'center' }}>
           <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
             <input
@@ -109,6 +173,24 @@ export function UserExperiencePanel({
             />
             Show station markers
           </label>
+          <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={showMiniCharts}
+              onChange={(event) => onShowMiniChartsChange(event.target.checked)}
+              aria-label="Toggle mini charts"
+            />
+            Show mini charts
+          </label>
+          <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={showWeatherAnimations}
+              onChange={(event) => onShowWeatherAnimationsChange(event.target.checked)}
+              aria-label="Toggle weather animations"
+            />
+            Animate weather visuals
+          </label>
         </div>
       </div>
 
@@ -117,30 +199,70 @@ export function UserExperiencePanel({
         {providers.length === 0 ? (
           <p style={{ marginBottom: 0 }}>No station providers available yet.</p>
         ) : (
-          <div style={{ marginTop: 8, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {providers.map((provider) => {
+          <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+            {orderedProviders.map((provider) => {
               const checked = visibleProviders.includes(provider);
+              const currentIndex = visibleProviders.indexOf(provider);
               return (
-                <label key={provider} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(event) => {
-                      if (event.target.checked) {
-                        onVisibleProvidersChange([...visibleProviders, provider]);
-                        return;
-                      }
+                <div
+                  key={provider}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    padding: '6px 8px',
+                    borderRadius: 10,
+                    border: '1px solid var(--wx-border, #d1d5db)',
+                    background: 'var(--wx-surface-strong, #f8fafc)'
+                  }}
+                >
+                  <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          onVisibleProvidersChange([...visibleProviders, provider]);
+                          return;
+                        }
 
-                      onVisibleProvidersChange(visibleProviders.filter((item) => item !== provider));
-                    }}
-                    aria-label={`Toggle provider ${provider}`}
-                  />
-                  {provider}
-                </label>
+                        onVisibleProvidersChange(visibleProviders.filter((item) => item !== provider));
+                      }}
+                      aria-label={`Toggle provider ${provider}`}
+                    />
+                    <span>{provider}</span>
+                  </label>
+                  {checked ? (
+                    <div style={{ display: 'inline-flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => moveProviderPriority(provider, 'up')}
+                        disabled={currentIndex <= 0}
+                        aria-label={`Move ${provider} up`}
+                        title="Increase priority"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveProviderPriority(provider, 'down')}
+                        disabled={currentIndex === -1 || currentIndex >= visibleProviders.length - 1}
+                        aria-label={`Move ${provider} down`}
+                        title="Decrease priority"
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
           </div>
         )}
+        <p style={{ marginTop: 8, marginBottom: 0, fontSize: 12, opacity: 0.85 }}>
+          Tip: checked providers are shown in priority order from top to bottom. Use arrows to reorder.
+        </p>
       </div>
     </section>
   );

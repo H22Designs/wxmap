@@ -69,4 +69,63 @@ export class StationRepository {
     const row = statement.get(stationId) as DbStationRow | undefined;
     return row ? mapStationRow(row) : null;
   }
+
+  getStationByProviderExternalId(provider: string, externalId: string): Station | null {
+    const statement = this.db.prepare(
+      `
+      SELECT id, provider, external_id, name, lat, lng, elevation_m, active, created_at
+      FROM stations
+      WHERE provider = ?
+        AND external_id = ?
+      LIMIT 1
+      `
+    );
+
+    const row = statement.get(provider, externalId) as DbStationRow | undefined;
+    return row ? mapStationRow(row) : null;
+  }
+
+  createStation(input: {
+    id: string;
+    provider: string;
+    externalId: string;
+    name: string;
+    lat: number;
+    lng: number;
+    elevationM: number | null;
+    active?: boolean;
+  }): Station {
+    const insertStatement = this.db.prepare(`
+      INSERT INTO stations (
+        id,
+        provider,
+        external_id,
+        name,
+        lat,
+        lng,
+        elevation_m,
+        active
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertStatement.run(
+      input.id,
+      input.provider,
+      input.externalId,
+      input.name,
+      input.lat,
+      input.lng,
+      input.elevationM,
+      input.active === false ? 0 : 1
+    );
+
+    const created = this.getStationById(input.id);
+
+    if (!created) {
+      throw new Error(`Failed to create station '${input.id}'`);
+    }
+
+    return created;
+  }
 }

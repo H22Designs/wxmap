@@ -6,6 +6,15 @@ type StationsResponse = {
   items: Station[];
 };
 
+type WeatherProvidersResponse = {
+  items: string[];
+};
+
+type ProviderStationsResponse = {
+  provider: string;
+  items: ProviderStationCandidate[];
+};
+
 type CurrentResponse = {
   items: CurrentObservation[];
   collectedAt: string;
@@ -88,6 +97,17 @@ export type Station = {
 export type LoginResult = LoginResponse;
 export type RegisterResult = RegisterResponse;
 
+export type ProviderStationCandidate = {
+  provider: string;
+  externalId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  elevationM: number | null;
+  inDatabase: boolean;
+  inCatalog: boolean;
+};
+
 export type CurrentObservation = {
   id: string;
   stationId: string;
@@ -116,7 +136,15 @@ export type UserPreferences = {
   unitSystem: UnitSystem;
   showRadarLayer: boolean;
   showStationLayer: boolean;
+  weatherVisualTone: 'balanced' | 'vivid' | 'minimal';
+  showWeatherAnimations: boolean;
+  showMiniCharts: boolean;
+  historyChartMode: 'line' | 'area';
   visibleProviders: string[];
+  activeWorkspace: 'dashboard' | 'explore' | 'admin';
+  surfaceStyle: 'glass' | 'elevated' | 'neo';
+  dashboardCardOrder: string[];
+  hiddenDashboardCards: string[];
   updatedAt: string;
 };
 
@@ -152,6 +180,92 @@ export async function fetchStations(limit = 50): Promise<Station[]> {
 
   const payload = (await response.json()) as StationsResponse;
   return payload.items;
+}
+
+export async function fetchWeatherProviders(): Promise<string[]> {
+  const response = await fetch(`${apiBaseUrl}/weather/providers`);
+
+  if (!response.ok) {
+    throw new Error(`Weather providers request failed with status ${response.status}`);
+  }
+
+  const payload = (await response.json()) as WeatherProvidersResponse;
+  return payload.items;
+}
+
+export async function fetchProviderStations(input: {
+  provider: string;
+  query?: string;
+  limit?: number;
+}): Promise<ProviderStationCandidate[]> {
+  const query = new URLSearchParams();
+
+  if (input.query?.trim()) {
+    query.set('q', input.query.trim());
+  }
+
+  if (typeof input.limit === 'number') {
+    query.set('limit', String(Math.max(1, Math.floor(input.limit))));
+  }
+
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  const response = await fetch(
+    `${apiBaseUrl}/weather/providers/${encodeURIComponent(input.provider)}/stations${suffix}`
+  );
+
+  if (!response.ok) {
+    throw new Error(`Provider stations request failed with status ${response.status}`);
+  }
+
+  const payload = (await response.json()) as ProviderStationsResponse;
+  return payload.items;
+}
+
+export async function createWeatherStation(input: {
+  accessToken: string;
+  provider: string;
+  externalId: string;
+  name?: string;
+  lat?: number;
+  lng?: number;
+  elevationM?: number | null;
+}): Promise<Station> {
+  const body: Record<string, unknown> = {
+    provider: input.provider,
+    externalId: input.externalId,
+    elevationM: input.elevationM ?? null
+  };
+
+  if (typeof input.name === 'string') {
+    body.name = input.name;
+  }
+
+  if (typeof input.lat === 'number') {
+    body.lat = input.lat;
+  }
+
+  if (typeof input.lng === 'number') {
+    body.lng = input.lng;
+  }
+
+  const response = await fetch(`${apiBaseUrl}/weather/stations`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new HttpStatusError(
+      errorText || `Create station request failed with status ${response.status}`,
+      response.status
+    );
+  }
+
+  return (await response.json()) as Station;
 }
 
 export async function fetchCurrentObservations(): Promise<CurrentObservation[]> {
@@ -403,7 +517,15 @@ export async function updateUserPreferences(input: {
   unitSystem?: UnitSystem;
   showRadarLayer?: boolean;
   showStationLayer?: boolean;
+  weatherVisualTone?: 'balanced' | 'vivid' | 'minimal';
+  showWeatherAnimations?: boolean;
+  showMiniCharts?: boolean;
+  historyChartMode?: 'line' | 'area';
   visibleProviders?: string[];
+  activeWorkspace?: 'dashboard' | 'explore' | 'admin';
+  surfaceStyle?: 'glass' | 'elevated' | 'neo';
+  dashboardCardOrder?: string[];
+  hiddenDashboardCards?: string[];
 }): Promise<UserPreferences> {
   const response = await fetch(`${apiBaseUrl}/user/preferences`, {
     method: 'PUT',

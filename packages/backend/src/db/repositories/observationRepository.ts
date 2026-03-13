@@ -33,7 +33,7 @@ export class ObservationRepository {
   constructor(private readonly db: Database.Database) {}
 
   listForStation(stationId: string, limit = 120): Observation[] {
-    const safeLimit = Math.max(1, Math.min(limit, 500));
+    const safeLimit = Math.max(1, Math.min(limit, 5000));
 
     const statement = this.db.prepare(
       `
@@ -70,5 +70,75 @@ export class ObservationRepository {
 
     const rows = statement.all(safeLimit) as DbObservationRow[];
     return rows.map(mapObservationRow);
+  }
+
+  upsertObservation(input: {
+    id: string;
+    stationId: string;
+    observedAt: string;
+    tempC: number | null;
+    humidityPct: number | null;
+    pressureHpa: number | null;
+    windSpeedMs: number | null;
+    windDirDeg: number | null;
+    precipMm: number | null;
+    rawJson: string | null;
+  }): Observation {
+    const statement = this.db.prepare(`
+      INSERT INTO observations (
+        id,
+        station_id,
+        observed_at,
+        temp_c,
+        humidity_pct,
+        pressure_hpa,
+        wind_speed_ms,
+        wind_dir_deg,
+        precip_mm,
+        raw_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        station_id = excluded.station_id,
+        observed_at = excluded.observed_at,
+        temp_c = excluded.temp_c,
+        humidity_pct = excluded.humidity_pct,
+        pressure_hpa = excluded.pressure_hpa,
+        wind_speed_ms = excluded.wind_speed_ms,
+        wind_dir_deg = excluded.wind_dir_deg,
+        precip_mm = excluded.precip_mm,
+        raw_json = excluded.raw_json
+    `);
+
+    statement.run(
+      input.id,
+      input.stationId,
+      input.observedAt,
+      input.tempC,
+      input.humidityPct,
+      input.pressureHpa,
+      input.windSpeedMs,
+      input.windDirDeg,
+      input.precipMm,
+      input.rawJson
+    );
+
+    const getStatement = this.db.prepare(
+      `
+      SELECT id, station_id, observed_at, temp_c, humidity_pct, pressure_hpa,
+             wind_speed_ms, wind_dir_deg, precip_mm, raw_json
+      FROM observations
+      WHERE id = ?
+      LIMIT 1
+      `
+    );
+
+    const row = getStatement.get(input.id) as DbObservationRow | undefined;
+
+    if (!row) {
+      throw new Error(`Failed to upsert observation '${input.id}'`);
+    }
+
+    return mapObservationRow(row);
   }
 }

@@ -26,11 +26,34 @@ const providerStatusStore = new ProviderStatusStore({
 type StationRepositoryLike = {
   listStations: (args: { provider?: string; limit?: number }) => Station[];
   getStationById: (stationId: string) => Station | null;
+  getStationByProviderExternalId: (provider: string, externalId: string) => Station | null;
+  createStation: (input: {
+    id: string;
+    provider: string;
+    externalId: string;
+    name: string;
+    lat: number;
+    lng: number;
+    elevationM: number | null;
+    active?: boolean;
+  }) => Station;
 };
 
 type ObservationRepositoryLike = {
   listForStation: (stationId: string, limit?: number) => Observation[];
   listLatestForAllStations: (limit?: number) => Observation[];
+  upsertObservation: (input: {
+    id: string;
+    stationId: string;
+    observedAt: string;
+    tempC: number | null;
+    humidityPct: number | null;
+    pressureHpa: number | null;
+    windSpeedMs: number | null;
+    windDirDeg: number | null;
+    precipMm: number | null;
+    rawJson: string | null;
+  }) => Observation;
 };
 
 type SettingsRepositoryLike = {
@@ -51,6 +74,7 @@ type UserRepositoryLike = {
 
 type ProviderConfigRepositoryLike = {
   listConfigs: () => ProviderConfig[];
+  getConfig: (provider: string) => ProviderConfig | null;
   upsertConfig: (input: {
     provider: string;
     enabled?: boolean;
@@ -70,7 +94,15 @@ type UserPreferencesRepositoryLike = {
     unitSystem?: 'metric' | 'imperial';
     showRadarLayer?: boolean;
     showStationLayer?: boolean;
+    weatherVisualTone?: 'balanced' | 'vivid' | 'minimal';
+    showWeatherAnimations?: boolean;
+    showMiniCharts?: boolean;
+    historyChartMode?: 'line' | 'area';
     visibleProviders?: string[];
+    activeWorkspace?: 'dashboard' | 'explore' | 'admin';
+    surfaceStyle?: 'glass' | 'elevated' | 'neo';
+    dashboardCardOrder?: string[];
+    hiddenDashboardCards?: string[];
   }) => UserPreferences;
 };
 
@@ -232,7 +264,29 @@ function createInMemoryRepositories(): {
         const safeLimit = Math.max(1, Math.min(limit ?? 100, 1000));
         return filtered.slice(0, safeLimit);
       },
-      getStationById: (stationId) => stations.find((station) => station.id === stationId) ?? null
+      getStationById: (stationId) => stations.find((station) => station.id === stationId) ?? null,
+      getStationByProviderExternalId: (provider, externalId) =>
+        stations.find(
+          (station) =>
+            station.provider.toLowerCase() === provider.toLowerCase() &&
+            station.externalId.toLowerCase() === externalId.toLowerCase()
+        ) ?? null,
+      createStation: (input) => {
+        const created: Station = {
+          id: input.id,
+          provider: input.provider,
+          externalId: input.externalId,
+          name: input.name,
+          lat: input.lat,
+          lng: input.lng,
+          elevationM: input.elevationM,
+          active: input.active ?? true,
+          createdAt: new Date().toISOString()
+        };
+
+        stations.push(created);
+        return created;
+      }
     },
     observationRepository: {
       listForStation: (stationId, limit = 120) => {
@@ -256,6 +310,30 @@ function createInMemoryRepositories(): {
         return [...latestByStation.values()]
           .sort((a, b) => b.observedAt.localeCompare(a.observedAt))
           .slice(0, safeLimit);
+      },
+      upsertObservation: (input) => {
+        const existingIndex = observations.findIndex((item) => item.id === input.id);
+
+        const next: Observation = {
+          id: input.id,
+          stationId: input.stationId,
+          observedAt: input.observedAt,
+          tempC: input.tempC,
+          humidityPct: input.humidityPct,
+          pressureHpa: input.pressureHpa,
+          windSpeedMs: input.windSpeedMs,
+          windDirDeg: input.windDirDeg,
+          precipMm: input.precipMm,
+          rawJson: input.rawJson
+        };
+
+        if (existingIndex >= 0) {
+          observations[existingIndex] = next;
+        } else {
+          observations.push(next);
+        }
+
+        return next;
       }
     },
     settingsRepository: {
@@ -290,6 +368,7 @@ function createInMemoryRepositories(): {
     },
     providerConfigRepository: {
       listConfigs: () => [...providerConfigs.values()].sort((a, b) => a.provider.localeCompare(b.provider)),
+      getConfig: (provider) => providerConfigs.get(provider) ?? null,
       upsertConfig: (input) => {
         const existing = providerConfigs.get(input.provider);
         const updated: ProviderConfig = {
@@ -321,10 +400,18 @@ function createInMemoryRepositories(): {
           userId,
           darkMode: false,
           mapViewMode: '2d',
-          unitSystem: 'metric',
+          unitSystem: 'imperial',
           showRadarLayer: true,
           showStationLayer: true,
+          weatherVisualTone: 'balanced',
+          showWeatherAnimations: true,
+          showMiniCharts: true,
+          historyChartMode: 'line',
           visibleProviders: [],
+          activeWorkspace: 'dashboard',
+          surfaceStyle: 'glass',
+          dashboardCardOrder: ['map-controls', 'experience', 'map', 'history'],
+          hiddenDashboardCards: [],
           updatedAt: new Date().toISOString()
         };
 
@@ -337,10 +424,19 @@ function createInMemoryRepositories(): {
           userId: input.userId,
           darkMode: input.darkMode ?? existing?.darkMode ?? false,
           mapViewMode: input.mapViewMode ?? existing?.mapViewMode ?? '2d',
-          unitSystem: input.unitSystem ?? existing?.unitSystem ?? 'metric',
+          unitSystem: input.unitSystem ?? existing?.unitSystem ?? 'imperial',
           showRadarLayer: input.showRadarLayer ?? existing?.showRadarLayer ?? true,
           showStationLayer: input.showStationLayer ?? existing?.showStationLayer ?? true,
+          weatherVisualTone: input.weatherVisualTone ?? existing?.weatherVisualTone ?? 'balanced',
+          showWeatherAnimations: input.showWeatherAnimations ?? existing?.showWeatherAnimations ?? true,
+          showMiniCharts: input.showMiniCharts ?? existing?.showMiniCharts ?? true,
+          historyChartMode: input.historyChartMode ?? existing?.historyChartMode ?? 'line',
           visibleProviders: input.visibleProviders ?? existing?.visibleProviders ?? [],
+          activeWorkspace: input.activeWorkspace ?? existing?.activeWorkspace ?? 'dashboard',
+          surfaceStyle: input.surfaceStyle ?? existing?.surfaceStyle ?? 'glass',
+          dashboardCardOrder:
+            input.dashboardCardOrder ?? existing?.dashboardCardOrder ?? ['map-controls', 'experience', 'map', 'history'],
+          hiddenDashboardCards: input.hiddenDashboardCards ?? existing?.hiddenDashboardCards ?? [],
           updatedAt: new Date().toISOString()
         };
 
@@ -436,7 +532,15 @@ const collectorService = new CollectorService({
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/v1/weather', weatherRouter({ stationRepository, observationRepository }));
+app.use(
+  '/api/v1/weather',
+  weatherRouter({
+    stationRepository,
+    observationRepository,
+    listAvailableProviders: () => [...knownProviders],
+    getProviderLookupConfig: (provider) => providerConfigRepository.getConfig(provider)
+  })
+);
 app.use('/api/v1/radar', radarRouter);
 app.use('/api/v1/auth', authRouter({ userRepository }));
 app.use('/api/v1/user', userRouter({ userPreferencesRepository }));
