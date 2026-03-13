@@ -165,6 +165,8 @@ export function App(): JSX.Element {
   const [historyStatus, setHistoryStatus] = useState<string>('no-station-selected');
   const [backfillStatus, setBackfillStatus] = useState<string>('idle');
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
+  const [isStationSpotlightOpen, setIsStationSpotlightOpen] = useState<boolean>(false);
+  const [stationSpotlightStationId, setStationSpotlightStationId] = useState<string | null>(null);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -1297,6 +1299,24 @@ export function App(): JSX.Element {
     [currentByStationId, selectedStationId]
   );
 
+  const spotlightStation = useMemo(
+    () => (stationSpotlightStationId ? stations.find((station) => station.id === stationSpotlightStationId) ?? null : null),
+    [stations, stationSpotlightStationId]
+  );
+
+  const spotlightCurrent = useMemo(
+    () => (stationSpotlightStationId ? currentByStationId[stationSpotlightStationId] : undefined),
+    [currentByStationId, stationSpotlightStationId]
+  );
+
+  const spotlightHistory = useMemo(() => {
+    if (!stationSpotlightStationId) {
+      return [];
+    }
+
+    return stationSpotlightStationId === selectedStationId ? selectedStationHistory : [];
+  }, [stationSpotlightStationId, selectedStationId, selectedStationHistory]);
+
   const stationPickerOptions = useMemo(() => {
     const normalizedQuery = stationSearchQuery.trim().toLowerCase();
     const sorted = [...stations].sort((left, right) => {
@@ -1757,6 +1777,8 @@ export function App(): JSX.Element {
 
     if (toastAction.kind === 'open-station-overview') {
       setSelectedStationId(toastAction.stationId);
+      setStationSpotlightStationId(toastAction.stationId);
+      setIsStationSpotlightOpen(true);
       setActiveWorkspace('dashboard');
       setHiddenDashboardCards((previous) => previous.filter((item) => item !== 'history'));
       setShowStationLayer(true);
@@ -1764,6 +1786,28 @@ export function App(): JSX.Element {
       setToastAction(null);
     }
   }
+
+  function closeStationSpotlight(): void {
+    setIsStationSpotlightOpen(false);
+  }
+
+  useEffect(() => {
+    if (!isStationSpotlightOpen) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setIsStationSpotlightOpen(false);
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isStationSpotlightOpen]);
 
   return (
     <main
@@ -1888,6 +1932,40 @@ export function App(): JSX.Element {
           position: sticky;
           top: 8px;
           z-index: 30;
+        }
+        .wx-spotlight-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 1400;
+          background: rgba(2, 6, 23, 0.56);
+          backdrop-filter: blur(5px);
+          display: grid;
+          align-items: center;
+          justify-items: center;
+          padding: 16px;
+        }
+        .wx-spotlight-modal {
+          width: min(1040px, 100%);
+          max-height: min(88vh, 880px);
+          overflow: auto;
+          border-radius: 18px;
+          border: 1px solid var(--wx-border, #d1d5db);
+          background: var(--wx-surface, #ffffff);
+          box-shadow: 0 28px 72px rgba(15, 23, 42, 0.42);
+          padding: 16px;
+          display: grid;
+          gap: 12px;
+          animation: wxSpotlightIn 150ms ease-out;
+        }
+        @keyframes wxSpotlightIn {
+          from {
+            transform: translateY(8px) scale(0.985);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+          }
         }
         @media (max-width: 900px) {
           main {
@@ -2706,6 +2784,73 @@ export function App(): JSX.Element {
               setToastAction(null);
             }}
           />
+        ) : null}
+        {isStationSpotlightOpen && spotlightStation ? (
+          <div
+            className="wx-spotlight-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Station spotlight for ${spotlightStation.name}`}
+            onClick={closeStationSpotlight}
+          >
+            <section
+              className="wx-spotlight-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div>
+                  <h2 style={{ margin: 0 }}>{spotlightStation.name}</h2>
+                  <p style={{ marginTop: 4, marginBottom: 0, color: 'var(--wx-muted, #475569)', fontSize: 13 }}>
+                    {spotlightStation.provider} · {spotlightStation.externalId} · {getMetricLabel(selectedMetric, spotlightCurrent)}
+                  </p>
+                </div>
+                <div style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveWorkspace('dashboard');
+                      setSelectedStationId(spotlightStation.id);
+                      setHiddenDashboardCards((previous) => previous.filter((item) => item !== 'history'));
+                    }}
+                  >
+                    Open in dashboard
+                  </button>
+                  <button type="button" onClick={closeStationSpotlight} aria-label="Close station spotlight">
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <StationInsightsPanel
+                station={spotlightStation}
+                current={spotlightCurrent}
+                history={spotlightHistory}
+                unitSystem={unitSystem}
+                showMiniCharts={showMiniCharts}
+              />
+
+              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+                <StationHistoryChart
+                  stationName={spotlightStation.name}
+                  observations={spotlightHistory}
+                  metric="tempC"
+                  unitSystem={unitSystem}
+                  chartMode={historyChartMode}
+                  weatherVisualTone={weatherVisualTone}
+                  animated={showWeatherAnimations}
+                />
+                <StationHistoryChart
+                  stationName={spotlightStation.name}
+                  observations={spotlightHistory}
+                  metric="windSpeedMs"
+                  unitSystem={unitSystem}
+                  chartMode={historyChartMode}
+                  weatherVisualTone={weatherVisualTone}
+                  animated={showWeatherAnimations}
+                />
+              </div>
+            </section>
+          </div>
         ) : null}
       </div>
     </main>
